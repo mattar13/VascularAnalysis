@@ -21,7 +21,7 @@ class DataManager:
 
         self.sheet_names = [] #Initialize an empty list of sheet names
 
-        self.density_raster_dict = {} #This will be a dictionary of the density rasters
+        self.density_dict = {} #This will be a dictionary of the density rasters
 
         #Variables for the size of the raster
         self.raster_rows = 0
@@ -57,13 +57,11 @@ class DataManager:
             if sheet_name != id_sheet_name: #If the sheet name is not the identification sheet
                 self.sheet_names.append(sheet_name)
                 sheet_data = xls.parse(sheet_name) #Parse the sheet
-                self.density_raster_dict[sheet_name] = sheet_data #Store the sheet in the dictionary
+                self.density_dict[sheet_name] = sheet_data #Store the sheet in the dictionary
 
-    def construct_master_id_raster_df(self):
-        print("Working")
-
+    #These functions are for constructing the master sheet from a single sheet
     def construct_master_sheet_df(self, sheet_name, suffix = "Density"):
-        print(f"constructing master sheet df from {sheet_name}")
+        #print(f"constructing master sheet df from {sheet_name}")
         
         #Open the master dataframe with densities
         master_df = pd.read_excel(sheet_name)
@@ -86,8 +84,12 @@ class DataManager:
         #The end result of this function is to save each density raster to a seperate array
         self.density_raster_full = master_df[length_columns]
         self.id_sheet_full = master_df[identifier_columns]
+        
+        #Seperate the data raster by layer
         self.seperate_by_layer(suffix)
-        self.sheet_names = list(self.raster_dict.keys())
+               
+        #Align the rasters
+        self.align_rasters(suffix)
 
     def create_knee_identifier(self, master_df, length_columns):
         # @title ### Create a knee identifier
@@ -138,7 +140,7 @@ class DataManager:
         self.id_dict = {}
         #Iterate through all unique layers
         for layer in unique_layers:
-            
+            #print(layer)
             #if a layer is "0" ignore. I hate non general solutions, but here we go
             if layer == 0:
                 continue
@@ -148,6 +150,7 @@ class DataManager:
             #print(self.id_sheet_full[layer_idxs])
             self.raster_dict[layer+suffix] = self.density_raster_full[layer_idxs]
             self.id_dict[layer+suffix] = self.id_sheet_full[layer_idxs]
+            self.sheet_names.append(layer+suffix)
 
         self.id_sheet = self.id_dict[self.main_layer_sheet+suffix].reset_index(drop=True)
         self.id_sheet.drop(columns = ['Knee', 'Layer', 'Score'], inplace = True)
@@ -155,13 +158,31 @@ class DataManager:
         self.id_sheet.drop(columns = ["ManualLengthAve", "ManualLengthNonZeroAve"], inplace = True)
         self.raster_rows = len(self.id_sheet)
 
-    def align_rasters(self):
-        #aligned_data
+    def align_rasters(self, suffix):
         for raster_name in self.sheet_names:
-            #realigned_data
-            print(f"Aligning {raster_name}")
+            #print(f"Aligning {raster_name}")
+            if raster_name == self.main_layer_sheet+suffix:
+                self.density_dict[raster_name] = self.raster_dict[raster_name].to_numpy()
+            else: #We need to align the data if it is not the main layer
+                #Make an empty density sheet
+                empty_density_raster = np.zeros((self.raster_rows, self.raster_cols))
 
-        print("Getting it working")
+                id_sheet = self.id_dict[raster_name] #Pick the id_sheet
+                density_raster = self.raster_dict[raster_name].to_numpy() #Pick the density raster
+                for idx, row in self.id_sheet.iterrows():
+                    exp_id = row['ExpNum'] #This
+                    replicate = row['Replicate'] #This
+                    ImageName = row['ImageName'] #and this are identifiers
+                    raster_row = density_raster[(id_sheet['ExpNum'] == exp_id) & (id_sheet['Replicate'] == replicate) & (id_sheet['ImageName'] == ImageName)]
+                    if raster_row.shape[0]!=0:
+                        empty_density_raster[idx, :] = raster_row
+                        self.density_dict[raster_name] = empty_density_raster
+                #print(empty_density_raster.shape)
+        #print("Getting it working")
+
+    #These functions are for constructing the master sheet from a ID sheet and .tif files
+    def construct_master_id_raster_df(self):
+        print("Working")
 
     def test(self):
         #Run the test function
