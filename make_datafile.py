@@ -14,7 +14,7 @@ class DataManager:
         """
         # Initialize a dictionary to store dataframes by name
         self.sheet_dict = {}
-        
+        self.sheet_names = []
         self.datafile_path = file_path
 
         # Load the master dataframe if file_path is provided
