@@ -10,8 +10,8 @@ def main():
     construct_test = "test_files\\FullLeaf_LengthByDistance_REMOVE_BLUE.xlsx"
     data_constructed = DataManager()
     data_constructed.construct_master_sheet_df(construct_test)
-    data_constructed.seperate_by_layer()
-    print(data_constructed.id_sheet)
+    print(data_constructed.sheet_names)
+    data_constructed.align_rasters()
 
 if __name__ == "__main__":
     main()

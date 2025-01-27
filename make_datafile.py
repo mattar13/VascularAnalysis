@@ -28,7 +28,7 @@ class DataManager:
         self.raster_cols = 0
         self.raster_depth = 0
 
-        self.main_sheet_layer = main_layer_sheet
+        self.main_layer_sheet = main_layer_sheet
         # Load the master dataframe if file_path is provided
         if file_path:
             self.load_master_df(file_path)
@@ -49,22 +49,20 @@ class DataManager:
         #Open the excel file
         xls = pd.ExcelFile(file_path)
 
-        #Store the sheet names
-        self.sheet_names = list(xls.sheet_names)
-
         #Set the identification sheet to the same name as the option
         self.id_sheet = xls.parse(id_sheet_name)
 
         # Extract each sheet as a dictionary
         for sheet_name in xls.sheet_names:
             if sheet_name != id_sheet_name: #If the sheet name is not the identification sheet
+                self.sheet_names.append(sheet_name)
                 sheet_data = xls.parse(sheet_name) #Parse the sheet
                 self.density_raster_dict[sheet_name] = sheet_data #Store the sheet in the dictionary
 
     def construct_master_id_raster_df(self):
         print("Working")
 
-    def construct_master_sheet_df(self, sheet_name):
+    def construct_master_sheet_df(self, sheet_name, suffix = "Density"):
         print(f"constructing master sheet df from {sheet_name}")
         
         #Open the master dataframe with densities
@@ -88,7 +86,8 @@ class DataManager:
         #The end result of this function is to save each density raster to a seperate array
         self.density_raster_full = master_df[length_columns]
         self.id_sheet_full = master_df[identifier_columns]
-        self.seperate_by_layer()
+        self.seperate_by_layer(suffix)
+        self.sheet_names = list(self.raster_dict.keys())
 
     def create_knee_identifier(self, master_df, length_columns):
         # @title ### Create a knee identifier
@@ -125,7 +124,7 @@ class DataManager:
         master_df.insert(master_df.shape[1], "Score", Scores)
         return master_df
 
-    def seperate_by_layer(self):
+    def seperate_by_layer(self, suffix):
         """
         Seperates the master dataframe by layer
 
@@ -146,15 +145,19 @@ class DataManager:
             layer_idxs = self.id_sheet_full['Layer'] == layer
             #print(f"Layer: {layer}")
             #print(self.id_sheet_full[layer_idxs])
-            self.raster_dict[layer] = self.id_sheet_full[layer_idxs]
+            self.raster_dict[layer+suffix] = self.id_sheet_full[layer_idxs]
 
-        self.id_sheet = self.raster_dict[self.main_layer_sheet].reset_index(drop=True)
+        self.id_sheet = self.raster_dict[self.main_layer_sheet+suffix].reset_index(drop=True)
         self.id_sheet.drop(columns = ['Knee', 'Layer', 'Score'], inplace = True)
         #Considering putting this in a try block
         self.id_sheet.drop(columns = ["ManualLengthAve", "ManualLengthNonZeroAve"], inplace = True)
         self.raster_rows = len(self.id_sheet)
 
     def align_rasters(self):
+        #aligned_data
+        for raster_name in self.sheet_names:
+            print(f"Aligning {raster_name}")
+            
         print("Getting it working")
 
     def test(self):
