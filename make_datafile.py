@@ -12,19 +12,24 @@ class DataManager:
         Parameters:
         file_path (str, optional): Path to the Excel file containing the master dataset. Default is None.
         """
-        # Initialize a dictionary to store dataframes by name
-        self.sheet_dict = {}
-        self.sheet_names = []
+        #Store the dataframe in a location
         self.datafile_path = file_path
+
+        # Initialize a dictionary to store dataframes by name
+        self.id_sheet = pd.DataFrame() #Initialize an empty dataframe
+        self.sheet_names = [] #Initialize an empty list of sheet names
+        self.density_raster_dict = {} #This will be a dictionary of the density rasters
 
         # Load the master dataframe if file_path is provided
         if file_path:
             self.load_master_df(file_path)
 
-    def load_master_df(self, file_path):
+    def load_master_df(self, file_path, id_sheet_name = 'Identification_Sheet'):
         """
         Loads the master datasheet from an Excel file,
-        cleans unwanted columns, and fills in NaNs with 0.
+        turn the identification sheet into a dataframe
+        
+        turn the raster sheets into a dictionary of arrays
 
         Parameters:
         file_path (str): Path to the Excel file containing the master dataset.
@@ -35,10 +40,38 @@ class DataManager:
         #Open the excel file
         xls = pd.ExcelFile(file_path)
 
-        # Extract each sheet as a dictionary
-        self.sheet_dict = {sheet_name: xls.parse(sheet_name) for sheet_name in xls.sheet_names}
-        self.sheet_names = list(self.sheet_dict.keys())
+        #Store the sheet names
+        self.sheet_names = list(xls.sheet_names)
 
+        #Set the identification sheet to the same name as the option
+        self.id_sheet = xls.parse(id_sheet_name)
+
+        # Extract each sheet as a dictionary
+        for sheet_name in xls.sheet_names:
+            if sheet_name != id_sheet_name: #If the sheet name is not the identification sheet
+                sheet_data = xls.parse(sheet_name) #Parse the sheet
+                self.density_raster_dict[sheet_name] = sheet_data #Store the sheet in the dictionary
+
+    def construct_master_id_raster_df(self):
+        print("Working")
+
+    def construct_master_sheet_df(self, sheet_name):
+        print(f"constructing master sheet df from {sheet_name}")
+        
+        #Open the master dataframe with densities
+        master_df = pd.read_excel(sheet_name)
+        
+        #Fill all NaNs with 0
+        master_df.fillna(0, inplace = True)
+        # Remove columns with 'Unnamed' and specified variables
+        master_df = master_df.loc[:, ~master_df.columns.str.contains('^Unnamed')]
+
+        #Once we have the master dataframe, we can start constructing the raster dataframe
+        length_columns = [col for col in master_df.columns if col.startswith('X') and col[1:].isdigit()]
+
+        #The end result of this function is to save each density raster to a seperate array
+        self.density_raster = master_df[length_columns]
+        
     def test(self):
         #Run the test function
         print('This repository is properly loaded')
