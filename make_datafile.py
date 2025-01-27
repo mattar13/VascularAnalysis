@@ -17,7 +17,9 @@ class DataManager:
 
         # Initialize a dictionary to store dataframes by name
         self.id_sheet = pd.DataFrame() #Initialize an empty dataframe
+
         self.sheet_names = [] #Initialize an empty list of sheet names
+
         self.density_raster_dict = {} #This will be a dictionary of the density rasters
 
         # Load the master dataframe if file_path is provided
@@ -68,10 +70,20 @@ class DataManager:
 
         #Once we have the master dataframe, we can start constructing the raster dataframe
         length_columns = [col for col in master_df.columns if col.startswith('X') and col[1:].isdigit()]
+        identifier_columns = [col for col in master_df.columns if not col.startswith('X')]
 
         #The end result of this function is to save each density raster to a seperate array
-        self.density_raster = master_df[length_columns]
-        
+        self.density_raster_full = master_df[length_columns]
+        self.id_sheet_full = master_df[identifier_columns]
+
+        superficial_idxs = master_df['Layer'] == 'Superficial'
+        deep_idxs = master_df['Layer'] == 'Deep'
+        intermediate_idxs = master_df['Layer'] == 'Intermediate'
+        #Now we need to break down each 
+
+    def create_knee_identifier(self):
+        print("Working")
+
     def test(self):
         #Run the test function
         print('This repository is properly loaded')
