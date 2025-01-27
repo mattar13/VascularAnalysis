@@ -1,3 +1,4 @@
+import numpy as np
 def test_repo():
     print('This repository is properly loaded')
 
