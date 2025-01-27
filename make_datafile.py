@@ -6,7 +6,7 @@ class DataManager:
     """
     A simple class to handle loading and storing multiple dataframes.
     """
-    def __init__(self, file_path=None):
+    def __init__(self, file_path=None, main_layer_sheet = "Superficial"):
         """
         Initializes the DataManager. Optionally loads a master dataframe if a file path is provided.
 
@@ -23,6 +23,12 @@ class DataManager:
 
         self.density_raster_dict = {} #This will be a dictionary of the density rasters
 
+        #Variables for the size of the raster
+        self.raster_rows = 0
+        self.raster_cols = 0
+        self.raster_depth = 0
+
+        self.main_sheet_layer = main_layer_sheet
         # Load the master dataframe if file_path is provided
         if file_path:
             self.load_master_df(file_path)
@@ -71,7 +77,8 @@ class DataManager:
 
         #Once we have the master dataframe, we can start constructing the raster dataframe
         length_columns = [col for col in master_df.columns if col.startswith('X') and col[1:].isdigit()]
-        
+        self.raster_cols = len(length_columns)
+
         #This creates the knee identifier
         #print("Adding knee identifier")
         master_df = self.create_knee_identifier(master_df, length_columns)
@@ -81,6 +88,7 @@ class DataManager:
         #The end result of this function is to save each density raster to a seperate array
         self.density_raster_full = master_df[length_columns]
         self.id_sheet_full = master_df[identifier_columns]
+        self.seperate_by_layer()
 
     def create_knee_identifier(self, master_df, length_columns):
         # @title ### Create a knee identifier
@@ -117,26 +125,37 @@ class DataManager:
         master_df.insert(master_df.shape[1], "Score", Scores)
         return master_df
 
-    def seperate_by_layer(self, main_layer_sheet = "Superficial"):
+    def seperate_by_layer(self):
         """
         Seperates the master dataframe by layer
 
         main_layer_sheet is referring to the sheet that contains the most
         
         """
+        #Pull out all the unique laters
         unique_layers = self.id_sheet_full['Layer'].unique()
-        raster_dict = {}
+        #Initialize a dictionary to store the layers
+        self.raster_dict = {}
+        #Iterate through all unique layers
         for layer in unique_layers:
+            
+            #if a layer is "0" ignore. I hate non general solutions, but here we go
+            if layer == 0:
+                continue
+
             layer_idxs = self.id_sheet_full['Layer'] == layer
             #print(f"Layer: {layer}")
             #print(self.id_sheet_full[layer_idxs])
-            raster_dict[layer] = self.id_sheet_full[layer_idxs]
+            self.raster_dict[layer] = self.id_sheet_full[layer_idxs]
 
-        self.id_sheet = raster_dict[main_layer_sheet].reset_index(drop=True)
-        #superficial_idxs = self.id_sheet_full['Layer'] == 'Superficial'
-        #deep_idxs = self.id_sheet_full['Layer'] == 'Deep'
-        #intermediate_idxs = self.id_sheet_full['Layer'] == 'Intermediate'
-        #return self.id_sheet_full[superficial_idxs], self.id_sheet_full[deep_idxs], self.id_sheet_full[intermediate_idxs]
+        self.id_sheet = self.raster_dict[self.main_layer_sheet].reset_index(drop=True)
+        self.id_sheet.drop(columns = ['Knee', 'Layer', 'Score'], inplace = True)
+        #Considering putting this in a try block
+        self.id_sheet.drop(columns = ["ManualLengthAve", "ManualLengthNonZeroAve"], inplace = True)
+        self.raster_rows = len(self.id_sheet)
+
+    def align_rasters(self):
+        print("Getting it working")
 
     def test(self):
         #Run the test function
