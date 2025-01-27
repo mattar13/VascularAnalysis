@@ -135,6 +135,7 @@ class DataManager:
         unique_layers = self.id_sheet_full['Layer'].unique()
         #Initialize a dictionary to store the layers
         self.raster_dict = {}
+        self.id_dict = {}
         #Iterate through all unique layers
         for layer in unique_layers:
             
@@ -145,9 +146,10 @@ class DataManager:
             layer_idxs = self.id_sheet_full['Layer'] == layer
             #print(f"Layer: {layer}")
             #print(self.id_sheet_full[layer_idxs])
-            self.raster_dict[layer+suffix] = self.id_sheet_full[layer_idxs]
+            self.raster_dict[layer+suffix] = self.density_raster_full[layer_idxs]
+            self.id_dict[layer+suffix] = self.id_sheet_full[layer_idxs]
 
-        self.id_sheet = self.raster_dict[self.main_layer_sheet+suffix].reset_index(drop=True)
+        self.id_sheet = self.id_dict[self.main_layer_sheet+suffix].reset_index(drop=True)
         self.id_sheet.drop(columns = ['Knee', 'Layer', 'Score'], inplace = True)
         #Considering putting this in a try block
         self.id_sheet.drop(columns = ["ManualLengthAve", "ManualLengthNonZeroAve"], inplace = True)
@@ -156,8 +158,9 @@ class DataManager:
     def align_rasters(self):
         #aligned_data
         for raster_name in self.sheet_names:
+            #realigned_data
             print(f"Aligning {raster_name}")
-            
+
         print("Getting it working")
 
     def test(self):
