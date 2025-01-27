@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import tifffile as tiff #Opening .tif files
+import re
 import os
 
 class DataManager:
@@ -181,8 +183,26 @@ class DataManager:
         #print("Getting it working")
 
     #These functions are for constructing the master sheet from a ID sheet and .tif files
-    def construct_master_id_raster_df(self):
-        print("Working")
+    def construct_master_id_tiff_df(self, id_fn, density_fn, suffix = "Diving"):
+        #The caveat behind this is that an ID file needs to be opened already
+        id_df = pd.read_csv(id_fn) #Read the csv id file for the density vec
+        id_df['ImageName'] = id_df['File'].apply(lambda x: re.search(r'- (.*)\.tif', x).group(1) if pd.notna(x) else None)
+        density_array = tiff.imread(density_fn)  # Read all z-stacks
+        
+        for raster_sheet in ["Superficial", "Intermediate"]:
+            empty_raster_data = np.zeros((self.raster_rows, self.raster_cols))
+            for idx, row in self.id_sheet.iterrows():
+                ImageName = row['ImageName'] #and this are identifiers     
+                matching_rows = id_df[id_df['ImageName'] == ImageName] #Pull out id row
+                for _, MATCH in matching_rows.iterrows(): #Iterate through each match and pull out
+                    rows = density_array[MATCH['Slice']-1, :, MATCH['Row']-1, :]
+                    rows[np.isnan(rows)] = 0.0
+                    if raster_sheet == "Superficial":
+                        empty_raster_data[idx, :] = rows[0, :]
+                    elif raster_sheet == "Intermediate":
+                        empty_raster_data[idx, :] = rows[1, :]
+            self.density_dict[raster_sheet+suffix] = empty_raster_data
+            self.sheet_names.append(raster_sheet+suffix)
 
     def test(self):
         #Run the test function
