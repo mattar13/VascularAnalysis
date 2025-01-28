@@ -218,14 +218,18 @@ class DataManager:
                 #Finally save the data
                 data_frame.to_excel(writer, sheet_name=sheet_name, index=False)
 
+    def show_sheetnames(self):
+        print(self.sheet_names)
+        
     #These methods are about retrival and how to get certain data
-    def retrive_index_row(self, idx, sheetname = None):
+    def get_density_row(self, idx, sheetname = None):
+        if sheetname is None:
+            return [self.density_dict[sn].iloc[idx] for sn in self.sheet_names]
+        
+        elif sheetname in self.sheet_names:
+            return self.density_dict[sheetname].iloc[idx]
+        
         print("Nothing yet")
-
-    def retrieve_density_raster(self, sheet_name = None):
-        #If we specify none, we will return all density arrays related to the ID
-
-        print("Working")
 
 
     def test(self):
