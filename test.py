@@ -19,7 +19,7 @@ def test_loading():
     data_constructed.construct_master_id_tiff_df(id_fn, density_fn)
     print("Test successful")
     #Save the data
-    data_constructed.save_data_output("test_files\\test_output.xlsx")
+    data_constructed.save_data("test_files\\test_output.xlsx")
     print("Data saved to test_files\\test_output.xlsx")
     return data_loaded, data_constructed
 
@@ -30,6 +30,9 @@ def main():
     data_loaded, data_constructed = test_loading()
     
     #Now we want to test the retrieval methods
+    #get the first row of a single sheet
+    data_constructed.show_sheetnames()
+    data_constructed.get_density_row(0, "SuperficialDensity")
 
 if __name__ == "__main__":
     main()
