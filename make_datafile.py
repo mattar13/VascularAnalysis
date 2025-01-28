@@ -165,7 +165,7 @@ class DataManager:
         for raster_name in self.sheet_names:
             #print(f"Aligning {raster_name}")
             if raster_name == self.main_layer_sheet+suffix:
-                self.density_dict[raster_name] = self.raster_dict[raster_name].to_numpy()
+                self.density_dict[raster_name] = self.raster_dict[raster_name]
             else: #We need to align the data if it is not the main layer
                 #Make an empty density sheet
                 empty_density_raster = np.zeros((self.raster_rows, self.raster_cols))
@@ -220,7 +220,10 @@ class DataManager:
 
     def show_sheetnames(self):
         print(self.sheet_names)
-        
+
+    def show_column_titles(self):
+        print(self.id_sheet.columns.tolist())
+
     #These methods are about retrival and how to get certain data
     def get_density_row(self, idx, sheetname = None):
         if sheetname is None:
@@ -228,9 +231,48 @@ class DataManager:
         
         elif sheetname in self.sheet_names:
             return self.density_dict[sheetname].iloc[idx]
-        
-        print("Nothing yet")
 
+    def get_id_row(self, idx):
+        return self.id_sheet.iloc[idx]
+    
+    def get_category_df(self, expdate=None, expnum=None, 
+            replicate=None, image_name=None, 
+            age=None, genotype=None, eye=None, 
+            quadrant=None, magnification=None, mouse_id=None
+        ):
+        """
+        Filters the id_sheet dataframe based on optional category parameters.
+        """
+        # Start with the full dataframe
+        filtered_df = self.id_sheet
+
+        # Apply filters if parameters are provided
+        if expdate is not None:
+            filtered_df = filtered_df[filtered_df['ExpDate'] == expdate]
+        if expnum is not None:
+            filtered_df = filtered_df[filtered_df['ExpNum'] == expnum]
+        if replicate is not None:
+            filtered_df = filtered_df[filtered_df['Replicate'] == replicate]
+        if image_name is not None:
+            filtered_df = filtered_df[filtered_df['ImageName'] == image_name]
+        if age is not None:
+            filtered_df = filtered_df[filtered_df['Age'] == age]
+        if genotype is not None:
+            filtered_df = filtered_df[filtered_df['Genotype'] == genotype]
+        if eye is not None:
+            filtered_df = filtered_df[filtered_df['Eye'] == eye]
+        if quadrant is not None:
+            filtered_df = filtered_df[filtered_df['Quadrant'] == quadrant]
+        if magnification is not None:
+            filtered_df = filtered_df[filtered_df['Magnification'] == magnification]
+        if mouse_id is not None:
+            filtered_df = filtered_df[filtered_df['MouseId'] == mouse_id]
+
+        if filtered_df.empty:
+            print("No data found for the given parameters.")
+            return None
+        else:
+            return filtered_df
 
     def test(self):
         #Run the test function

@@ -31,8 +31,11 @@ def main():
     
     #Now we want to test the retrieval methods
     #get the first row of a single sheet
-    data_constructed.show_sheetnames()
-    data_constructed.get_density_row(0, "SuperficialDensity")
+    print(data_constructed.get_density_row([0, 101], "SuperficialDensity"))
+    data_constructed.get_density_row(101)
+
+    P10_df = data_constructed.get_category_index(age = 10, genotype = "RS1KO")
+    print(P10_df)
 
 if __name__ == "__main__":
     main()
