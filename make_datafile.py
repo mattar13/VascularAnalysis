@@ -35,6 +35,7 @@ class DataManager:
         if file_path:
             self.load_master_df(file_path)
 
+    #This function loads the master dataframe directly into the DataManager object
     def load_master_df(self, file_path, id_sheet_name = 'Identification_Sheet'):
         """
         Loads the master datasheet from an Excel file,
@@ -170,7 +171,7 @@ class DataManager:
                 empty_density_raster = np.zeros((self.raster_rows, self.raster_cols))
 
                 id_sheet = self.id_dict[raster_name] #Pick the id_sheet
-                density_raster = self.raster_dict[raster_name].to_numpy() #Pick the density raster
+                density_raster = self.raster_dict[raster_name] #Pick the density raster
                 for idx, row in self.id_sheet.iterrows():
                     exp_id = row['ExpNum'] #This
                     replicate = row['Replicate'] #This
@@ -178,7 +179,7 @@ class DataManager:
                     raster_row = density_raster[(id_sheet['ExpNum'] == exp_id) & (id_sheet['Replicate'] == replicate) & (id_sheet['ImageName'] == ImageName)]
                     if raster_row.shape[0]!=0:
                         empty_density_raster[idx, :] = raster_row
-                        self.density_dict[raster_name] = empty_density_raster
+                        self.density_dict[raster_name] = pd.DataFrame(empty_density_raster)
                 #print(empty_density_raster.shape)
         #print("Getting it working")
 
@@ -201,8 +202,31 @@ class DataManager:
                         empty_raster_data[idx, :] = rows[0, :]
                     elif raster_sheet == "Intermediate":
                         empty_raster_data[idx, :] = rows[1, :]
-            self.density_dict[raster_sheet+suffix] = empty_raster_data
+            self.density_dict[raster_sheet+suffix] = pd.DataFrame(empty_raster_data)
             self.sheet_names.append(raster_sheet+suffix)
+
+    #Functions meant for saving the data
+    def save_data(self, output_path):
+        #Save the data to an output path
+        with pd.ExcelWriter(output_path) as writer:
+            #First save the identification sheet
+            self.id_sheet.to_excel(writer, sheet_name='Identification_Sheet', index=False)
+            #Iterate through all other sheets 
+            for sheet_name in self.sheet_names:
+                #This funny thing happens where sometimes the data is a numpy array
+                data_frame = pd.DataFrame(self.density_dict[sheet_name])
+                #Finally save the data
+                data_frame.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    #These methods are about retrival and how to get certain data
+    def retrive_index_row(self, idx, sheetname = None):
+        print("Nothing yet")
+
+    def retrieve_density_raster(self, sheet_name = None):
+        #If we specify none, we will return all density arrays related to the ID
+
+        print("Working")
+
 
     def test(self):
         #Run the test function
