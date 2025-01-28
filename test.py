@@ -34,7 +34,7 @@ def main():
     print(data_constructed.get_density_row([0, 101], "SuperficialDensity"))
     data_constructed.get_density_row(101)
 
-    P10_df = data_constructed.get_category_index(age = 10, genotype = "RS1KO")
+    P10_df = data_constructed.get_category_index(age = 10, genotype = "B2")
     print(P10_df)
 
 if __name__ == "__main__":
