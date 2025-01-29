@@ -35,6 +35,10 @@ class DataManager:
         if file_path:
             self.load_master_df(file_path)
 
+    def __getitem__(self, key):
+        if key in self.sheet_names:
+            return self.density_dict[key]
+
     #This function loads the master dataframe directly into the DataManager object
     def load_master_df(self, file_path, id_sheet_name = 'Identification_Sheet'):
         """
@@ -273,9 +277,13 @@ class DataManager:
             return None
         else:
             return filtered_df
-
-    def test(self):
-        #Run the test function
-        print('This repository is properly loaded')
-        print(self.datafile_path)
-        print(self.sheet_names)
+    
+    def get_category_index(self, **kwargs):
+        """
+        Returns the index of the first row that matches the given category parameters.
+        """
+        filtered_df = self.get_category_df(**kwargs)
+        if filtered_df is not None:
+            return filtered_df.index.values
+        else:
+            return None
