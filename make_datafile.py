@@ -239,6 +239,15 @@ class DataManager:
     def get_id_row(self, idx):
         return self.id_sheet.iloc[idx]
     
+    def show_id_row(self, idx):
+        age = self.id_sheet.iloc[idx]['Age']
+        genotype = self.id_sheet.iloc[idx]['Genotype']
+        eye = self.id_sheet.iloc[idx]['Eye']
+        quadrant = self.id_sheet.iloc[idx]['Quadrant']
+        magnification = self.id_sheet.iloc[idx]['Magnification']
+        mouse_id = self.id_sheet.iloc[idx]['MouseId']
+        print(f"Properties \n\tAge: {age}, \n\tGenotype: {genotype}, \n\tEye: {eye} \n\tQuadrant: {quadrant} \n\tMagnification: {magnification} \n\tMouse ID: {mouse_id}")
+
     def get_category_df(self, expdate=None, expnum=None, 
             replicate=None, image_name=None, 
             age=None, genotype=None, eye=None, 
