@@ -245,8 +245,8 @@ class DataManager:
         eye = self.id_sheet.iloc[idx]['Eye']
         quadrant = self.id_sheet.iloc[idx]['Quadrant']
         magnification = self.id_sheet.iloc[idx]['Magnification']
-        mouse_id = self.id_sheet.iloc[idx]['MouseId']
-        print(f"Properties \n\tAge: {age}, \n\tGenotype: {genotype}, \n\tEye: {eye} \n\tQuadrant: {quadrant} \n\tMagnification: {magnification} \n\tMouse ID: {mouse_id}")
+        mouse_id = self.id_sheet.iloc[idx]['Mouse ID']
+        print(f"Properties of data entry {idx} \n\tAge: {age} \n\tGenotype: {genotype} \n\tEye: {eye} \n\tQuadrant: {quadrant} \n\tMagnification: {magnification} \n\tMouse ID: {mouse_id}")
 
     def get_category_df(self, expdate=None, expnum=None, 
             replicate=None, image_name=None, 

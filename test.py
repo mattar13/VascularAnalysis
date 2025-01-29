@@ -41,7 +41,7 @@ def main():
     data_loaded.show_sheetnames()
 
     #Want to pull out all data that results in a certain averages not being met
-    print(data_loaded["SuperficialDensity"])
+    data_loaded.show_id_row(101)
 
 if __name__ == "__main__":
     main()
