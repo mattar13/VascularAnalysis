@@ -34,9 +34,9 @@ def main():
     data_loaded.get_density_row([0, 101], "SuperficialDensity")
     data_loaded.get_density_row(101)
 
-    P10_df = data_loaded.get_category_df(age = 10, genotype = "B2")
+    P10_df = data_loaded.get_category_df(age = 10, genotype = "WT")
 
-    P10_idx = data_loaded.get_category_index(age = 10, genotype = "B2")
+    P10_idx = data_loaded.get_category_index(age = 10, genotype = "WT")
 
     data_loaded.show_sheetnames()
 
