@@ -5,7 +5,7 @@ def test_loading():
     print("Testing loading functions") 
     # I) This is a test for loading data using the manager
     load_test = "test_files\\MasterSheet.xlsx"
-    data_loaded = DataManager(load_test)
+    vasc_data = DataManager(load_test)
 
     #II) This is a test for constructing data using the manager
     #data_constructed = DataManager() #Initialize the manager
@@ -21,27 +21,33 @@ def test_loading():
     #Save the data
     #data_constructed.save_data("test_files\\test_output.xlsx")
     #print("Data saved to test_files\\test_output.xlsx")
-    return data_loaded#, data_constructed
+    return vasc_data#, data_constructed
 
 def main():
     "Testing main functions"
 
     #There are two different ways to load data: 
-    data_loaded = test_loading()
+    vasc_data = test_loading()
     
     #Now we want to test the retrieval methods
     #get the first row of a single sheet
-    data_loaded.get_density_row([0, 101], "SuperficialDensity")
-    data_loaded.get_density_row(101)
+    vasc_data.get_density_with_index([0, 101], "SuperficialDensity")
+    vasc_data.get_density_with_index(101)
 
-    P10_df = data_loaded.get_category_df(age = 10, genotype = "WT")
+    P10_df = vasc_data.get_ID_df_with_category(age = 10, genotype = "WT")
 
-    P10_idx = data_loaded.get_category_index(age = 10, genotype = "WT")
+    P10_idx = vasc_data.get_index_with_category(age = 10, genotype = "WT")
 
-    data_loaded.show_sheetnames()
+    vasc_data.show_sheetnames()
 
     #Want to pull out all data that results in a certain averages not being met
-    data_loaded.show_id_row(101)
+    #Lets say we want to pull out a datasheet with all the P9 data
+
+    sample_df = vasc_data.get_index_with_category(age = 9)
+    #print(sample_df)
+    sample_sheets = vasc_data.get_density_with_category(age = 9)
+    print(sample_sheets["SuperficialDensity"])
+    #print(sample_sheets[0])
 
 if __name__ == "__main__":
     main()

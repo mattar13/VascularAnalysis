@@ -229,9 +229,11 @@ class DataManager:
         print(self.id_sheet.columns.tolist())
 
     #These methods are about retrival and how to get certain data
-    def get_density_row(self, idx, sheetname = None):
+    def get_density_with_index(self, idx, sheetname = None):
         if sheetname is None:
-            return [self.density_dict[sn].iloc[idx] for sn in self.sheet_names]
+            keys = self.sheet_names
+            values = [self.density_dict[sn].iloc[idx] for sn in self.sheet_names]
+            return dict(zip(keys, values))
         
         elif sheetname in self.sheet_names:
             return self.density_dict[sheetname].iloc[idx]
@@ -248,7 +250,7 @@ class DataManager:
         mouse_id = self.id_sheet.iloc[idx]['Mouse ID']
         print(f"Properties of data entry {idx} \n\tAge: {age} \n\tGenotype: {genotype} \n\tEye: {eye} \n\tQuadrant: {quadrant} \n\tMagnification: {magnification} \n\tMouse ID: {mouse_id}")
 
-    def get_category_df(self, expdate=None, expnum=None, 
+    def get_ID_df_with_category(self, expdate=None, expnum=None, 
             replicate=None, image_name=None, 
             age=None, genotype=None, eye=None, 
             quadrant=None, magnification=None, mouse_id=None
@@ -287,12 +289,22 @@ class DataManager:
         else:
             return filtered_df
     
-    def get_category_index(self, **kwargs):
+    def get_index_with_category(self, **kwargs):
         """
         Returns the index of the first row that matches the given category parameters.
         """
-        filtered_df = self.get_category_df(**kwargs)
+        filtered_df = self.get_ID_df_with_category(**kwargs)
         if filtered_df is not None:
             return filtered_df.index.values
+        else:
+            return None
+        
+    def get_density_with_category(self, sheetname = None, **kwargs):
+        """
+        Returns the rows of the first sheet that matches the given category parameters.
+        """
+        filtered_idxs = self.get_index_with_category(**kwargs)
+        if filtered_idxs is not None:
+            return self.get_density_with_index(filtered_idxs, sheetname)
         else:
             return None
