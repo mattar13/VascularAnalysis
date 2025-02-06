@@ -7,28 +7,34 @@ def test_loading():
     load_test = "test_files\\MasterSheet.xlsx"
     vasc_data = DataManager(load_test)
 
-    #II) This is a test for constructing data using the manager
-    #data_constructed = DataManager() #Initialize the manager
-    #Step 1: Load the density data
-    #construct_test = "test_files\\FullLeaf_LengthByDistance_REMOVE_BLUE.xlsx"
-    #data_constructed.construct_master_sheet_df(construct_test)
 
-    #Step 2: Load the data from tif files (with ID keys)
-    #id_fn = "test_files\\Diving vessel density files.csv"
-    #density_fn = "test_files\\Diving vessel density vectors.tif"
-    #data_constructed.construct_master_id_tiff_df(id_fn, density_fn)
-    #print("Test successful")
-    #Save the data
-    #data_constructed.save_data("test_files\\test_output.xlsx")
-    #print("Data saved to test_files\\test_output.xlsx")
     return vasc_data#, data_constructed
 
-def main():
-    "Testing main functions"
-
-    #There are two different ways to load data: 
-    vasc_data = test_loading()
+def test_construction():
+    #II) This is a test for constructing data using the manager
+    data_constructed = DataManager() #Initialize the manager
     
+    #Step 1: Load the density data
+    construct_test = "test_files\\FullLeaf_LengthByDistance_REMOVE_BLUE.xlsx"
+    data_constructed.construct_master_sheet_df(construct_test)
+    print("Constructing from a singular master data sheet")
+
+    #Step 2: Load the data from tif files (with ID keys)
+    id_fn = "test_files\\Diving vessel density files.csv"
+    density_fn = "test_files\\Diving vessel density vectors.tif"
+    data_constructed.construct_master_id_tiff_df(id_fn, density_fn)
+    print("Constructing from a .tif and .csv ID sheet")
+
+    return data_constructed
+
+def test_saving(vasc_data):
+    #Save the data
+    vasc_data.save_data("test_files\\test_output.xlsx")
+    print("Data saved to test_files\\test_output.xlsx")
+
+
+def test_retrival_methods(vasc_data):
+
     #Now we want to test the retrieval methods
     #get the first row of a single sheet
     vasc_data.get_density_with_index([0, 101], "SuperficialDensity")
@@ -45,9 +51,18 @@ def main():
 
     sample_df = vasc_data.get_index_with_category(age = 9)
     #print(sample_df)
-    sample_sheets = vasc_data.get_density_with_category(age = 9)
-    print(sample_sheets["SuperficialDensity"])
+    sample_sheets = vasc_data.get_density_with_category(sheetname = "SuperficialDiving", age = 9)
+    print(sample_sheets)
     #print(sample_sheets[0])
+
+def main():
+    "Testing main functions"
+
+    #There are two different ways to load data: 
+    vasc_constructed = test_construction()
+    print(vasc_constructed.id_sheet)
+    #vasc_data = test_loading()
+    #test_retrival_methods(vasc_data)
 
 if __name__ == "__main__":
     main()
