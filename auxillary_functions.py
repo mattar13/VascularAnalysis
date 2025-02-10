@@ -27,3 +27,28 @@ def apply_lut(image, lut):
     for i in range(3):  # Loop over RGB channels
         result[:, :, i] = lut[image[:, :, i]]
     return result
+
+
+def adjust_to_4d(array):
+    if array.ndim == 3:
+        array = np.expand_dims(array, axis=0)  # Add one dimension at the front
+    elif array.ndim == 2:
+        array = np.expand_dims(array, axis=(0, 1))  # Add two dimensions at the front
+    elif array.ndim < 2:
+        raise ValueError("Array must have at least 2 dimensions")
+    return array
+
+def pad_columns(array, pad_val = 34):
+    if array.ndim != 4:
+        raise ValueError("Input array must be 4-dimensional")
+    
+    current_columns = array.shape[3]
+    if current_columns < pad_val:
+        # Calculate the number of zero columns to add
+        columns_to_add = pad_val - current_columns
+        # Create an array of zeros with the same shape except for the fourth dimension
+        zero_padding = np.zeros(array.shape[:3] + (columns_to_add,), dtype=array.dtype)
+        # Concatenate the original array with the zero padding along the fourth dimension
+        array = np.concatenate((array, zero_padding), axis=3)
+    
+    return array
