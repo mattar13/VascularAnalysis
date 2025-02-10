@@ -3,6 +3,7 @@ import numpy as np
 import tifffile as tiff #Opening .tif files
 import re
 import os
+from auxillary_functions import adjust_to_4d, pad_columns
 
 class DataManager:
     """
@@ -84,6 +85,7 @@ class DataManager:
 
         #This creates the knee identifier
         #print("Adding knee identifier")
+        #Does it break if I remove this line?
         master_df = self.create_knee_identifier(master_df, length_columns)
 
         identifier_columns = [col for col in master_df.columns if not col.startswith('X')]
@@ -188,25 +190,31 @@ class DataManager:
         #print("Getting it working")
 
     #These functions are for constructing the master sheet from a ID sheet and .tif files
-    def construct_master_id_tiff_df(self, id_fn, density_fn, suffix = "Diving"):
+    def construct_master_id_tiff_df(self, id_fn, density_fn, suffix = "Diving", raster_sheet_names = ["Superficial", "Intermediate"]):
         #The caveat behind this is that an ID file needs to be opened already
         id_df = pd.read_csv(id_fn) #Read the csv id file for the density vec
         id_df['ImageName'] = id_df['File'].apply(lambda x: re.search(r'- (.*)\.tif', x).group(1) if pd.notna(x) else None)
         density_array = tiff.imread(density_fn)  # Read all z-stacks
-        
-        for raster_sheet in ["Superficial", "Intermediate"]:
+        density_array = adjust_to_4d(density_array)  # Adjust to 4D array
+        density_array = pad_columns(density_array, pad_val = self.raster_cols)  # Pad columns to 34
+
+        for raster_id, raster_sheet in enumerate(raster_sheet_names):
             empty_raster_data = np.zeros((self.raster_rows, self.raster_cols))
             for idx, row in self.id_sheet.iterrows():
-                ImageName = row['ImageName'] #and this are identifiers     
+                ImageName = row['ImageName'] #and this are identifiers
+
                 matching_rows = id_df[id_df['ImageName'] == ImageName] #Pull out id row
+                #print(matching_rows)
                 for _, MATCH in matching_rows.iterrows(): #Iterate through each match and pull out
                     rows = density_array[MATCH['Slice']-1, :, MATCH['Row']-1, :]
                     rows[np.isnan(rows)] = 0.0
-                    if raster_sheet == "Superficial":
-                        empty_raster_data[idx, :] = rows[0, :]
-                    elif raster_sheet == "Intermediate":
-                        empty_raster_data[idx, :] = rows[1, :]
-            self.density_dict[raster_sheet+suffix] = pd.DataFrame(empty_raster_data)
+                    empty_raster_data[idx, :] = rows[raster_id, :]
+                    #if raster_sheet == "Superficial":
+                    #    empty_raster_data[idx, :] = rows[0, :]
+                    #elif raster_sheet == "Intermediate":
+                    #    empty_raster_data[idx, :] = rows[1, :]
+                    
+            self.density_dict[raster_sheet+suffix] = pd.DataFrame(empty_raster_data) #This is a problem, we need to be able to merge datasheets
             self.sheet_names.append(raster_sheet+suffix)
 
     #Functions meant for saving the data
