@@ -61,9 +61,8 @@ def main():
     "Testing main functions"
 
     #There are two different ways to load data:
-    #vasc_constructed = test_construction()
     id_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\P5 Length Density Vectors - file list.csv"
-    density_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\C3-Length Density Vectors-P5-vessel length by retina area.tif"
+    density_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\C3-Length Density Vectors-P5-vessel length by retina area.tif"   
     vasc_constructed = test_construction(id_fn = id_fn, density_fn = density_fn)
     print(vasc_constructed.id_sheet)
     #vasc_data = test_loading()

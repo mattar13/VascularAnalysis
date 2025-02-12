@@ -213,9 +213,16 @@ class DataManager:
                     #    empty_raster_data[idx, :] = rows[0, :]
                     #elif raster_sheet == "Intermediate":
                     #    empty_raster_data[idx, :] = rows[1, :]
-                    
-            self.density_dict[raster_sheet+suffix] = pd.DataFrame(empty_raster_data) #This is a problem, we need to be able to merge datasheets
-            self.sheet_names.append(raster_sheet+suffix)
+            sheet_key = raster_sheet+suffix
+            if sheet_key in self.sheet_names:
+                print("sheet exists")
+                existing_df = self.density_dict[sheet_key]
+                new_df = pd.DataFrame(empty_raster_data)
+                updated_df = existing_df.add(new_df, fill_value=0)
+                self.density_dict[sheet_key] = updated_df
+            else:     
+                self.density_dict[raster_sheet+suffix] = pd.DataFrame(empty_raster_data) #This is a problem, we need to be able to merge datasheets
+                self.sheet_names.append(raster_sheet+suffix)
 
     #Functions meant for saving the data
     def save_data(self, output_path):
