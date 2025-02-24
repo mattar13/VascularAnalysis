@@ -193,10 +193,12 @@ class DataManager:
     def construct_master_id_tiff_df(self, id_fn, density_fn, suffix = "Diving", raster_sheet_names = ["Superficial", "Intermediate"]):
         #The caveat behind this is that an ID file needs to be opened already
         id_df = pd.read_csv(id_fn) #Read the csv id file for the density vec
+        print(id_df.shape)
         id_df['ImageName'] = id_df['File'].apply(lambda x: re.search(r'- (.*)\.tif', x).group(1) if pd.notna(x) else None)
         density_array = tiff.imread(density_fn)  # Read all z-stacks
         density_array = adjust_to_4d(density_array)  # Adjust to 4D array
         density_array = pad_columns(density_array, pad_val = self.raster_cols)  # Pad columns to 34
+        #print(density_array)
 
         for raster_id, raster_sheet in enumerate(raster_sheet_names):
             empty_raster_data = np.zeros((self.raster_rows, self.raster_cols))
