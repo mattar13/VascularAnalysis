@@ -7,11 +7,10 @@ def test_loading():
     load_test = "test_files\\MasterSheet.xlsx"
     vasc_data = DataManager(load_test)
 
-
     return vasc_data#, data_constructed
 
 def test_construction(
-    construct_test = "test_files\\FullLeaf_LengthByDistance_REMOVE_BLUE.xlsx", 
+    construct_test = "test_files\\FullLeaf_LengthByDistance.xlsx", 
     id_fn = "test_files\\Diving vessel density files.csv", 
     density_fn = "test_files\\Diving vessel density vectors.tif"
 ):
@@ -59,23 +58,25 @@ def test_retrival_methods(vasc_data):
 
 def main():
     "Testing main functions"
- 
+    
+    #II) This is a test for constructing data using the manager
+    data_constructed = DataManager() #Initialize the manager
+    
+    #Step 1: Load the density data
+    print("Constructing from a singular master data sheet")
+    construct_test = "test_files\\FullLeaf_LengthByDistance.xlsx" 
+    data_constructed.construct_master_sheet_df(construct_test)
+
     #There are two different ways to load data:
     id_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\P5 Length Density Vectors - file list.csv"
     density_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\C3-Length Density Vectors-P5-vessel length by retina area.tif"   
-    vasc_constructed = test_construction(id_fn = id_fn, density_fn = density_fn)
-    #print(vasc_constructed.id_sheet)
-    import tifffile as tiff 
-    
+    data_constructed.construct_master_id_tiff_df(id_fn, density_fn, suffix = "Density", raster_sheet_names = ["Superficial"])
+
     id_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\Diving vessel density files.csv"
     density_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\Diving vessel density vectors.tif"
-    density_array = tiff.imread(density_fn)  # Read all z-stacks
-    print(density_array.shape)
-    vasc_constructed.construct_master_id_tiff_df(id_fn, density_fn)
-    print(max(vasc_constructed["SuperficialDiving"]))
-    #vasc_data = test_loading()
-    #test_retrival_methods(vasc_data)
-    test_saving(vasc_constructed)
+    data_constructed.construct_master_id_tiff_df(id_fn, density_fn, suffix = "Diving", raster_sheet_names = ["Superficial", "Intermediate"])
+    
+    test_saving(data_constructed)
 
 if __name__ == "__main__":
     main()
