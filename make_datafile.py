@@ -144,9 +144,13 @@ class DataManager:
         """
         #Pull out all the unique laters
         unique_layers = self.id_sheet_full['Layer'].unique()
+        unique_layers = unique_layers[unique_layers != 0]
+    
         #Initialize a dictionary to store the layers
         self.raster_dict = {}
         self.id_dict = {}
+        self.knees = self.id_sheet_full["Knee"].to_numpy()
+
         #Iterate through all unique layers
         for layer in unique_layers:
             #print(layer)
@@ -158,13 +162,19 @@ class DataManager:
             #print(f"Layer: {layer}")
             #print(self.id_sheet_full[layer_idxs])
             self.raster_dict[layer+suffix] = self.density_raster_full[layer_idxs]
-            self.id_dict[layer+suffix] = self.id_sheet_full[layer_idxs]
+            id_dict = self.id_dict[layer+suffix] = self.id_sheet_full[layer_idxs]
+
+            #Add the knees onto the end
             self.sheet_names.append(layer+suffix)
 
-        self.id_sheet = self.id_dict[self.main_layer_sheet+suffix].reset_index(drop=True)
+        self.id_sheet = self.id_dict[self.main_layer_sheet+suffix].reset_index(drop = True)
         self.id_sheet.drop(columns = ['Knee', 'Layer', 'Score'], inplace = True)
-        #Considering putting this in a try block
         self.id_sheet.drop(columns = ["ManualLengthAve", "ManualLengthNonZeroAve"], inplace = True)
+        self.id_sheet["KneeSuperficial"] = 0
+        self.id_sheet["KneeDeep"] = 0
+        self.id_sheet["KneeIntermediate"] = 0
+        #Now we need to add the knee values back.
+        
         self.raster_rows = len(self.id_sheet)
 
     def align_rasters(self, suffix):
@@ -182,10 +192,25 @@ class DataManager:
                     exp_id = row['ExpNum'] #This
                     replicate = row['Replicate'] #This
                     ImageName = row['ImageName'] #and this are identifiers
+                    
                     raster_row = density_raster[(id_sheet['ExpNum'] == exp_id) & (id_sheet['Replicate'] == replicate) & (id_sheet['ImageName'] == ImageName)]
+                    id_idx = raster_row.index
+                    print("Intermediate" in raster_name)
                     if raster_row.shape[0]!=0:
+                        Knee = self.knees[id_idx]
                         empty_density_raster[idx, :] = raster_row
                         self.density_dict[raster_name] = pd.DataFrame(empty_density_raster)
+                    else:
+                        Knee = 0
+                    
+                    if "Intermediate" in raster_name:
+                        print("Int")
+                        self.id_sheet.iloc
+                    elif "Superficial" in raster_name:
+                        print("Superficial")
+                    elif "Deep" in raster_name:
+                        print("Deep")
+
                 #print(empty_density_raster.shape)
         #print("Getting it working")
 

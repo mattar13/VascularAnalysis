@@ -9,30 +9,10 @@ def test_loading():
 
     return vasc_data#, data_constructed
 
-def test_construction(
-    construct_test = "test_files\\FullLeaf_LengthByDistance.xlsx", 
-    id_fn = "test_files\\Diving vessel density files.csv", 
-    density_fn = "test_files\\Diving vessel density vectors.tif"
-):
-    #II) This is a test for constructing data using the manager
-    data_constructed = DataManager() #Initialize the manager
-    
-    #Step 1: Load the density data
-    print("Constructing from a singular master data sheet")
-    data_constructed.construct_master_sheet_df(construct_test)
-
-    #Step 2: Load the data from tif files (with ID keys)
-    print("Constructing from a .tif and .csv ID sheet")
-    data_constructed.construct_master_id_tiff_df(id_fn, density_fn, suffix = "Density", raster_sheet_names = ["Superficial"])
-    #print(data_constructed["SuperficialDensity"])
-
-    return data_constructed
-
 def test_saving(vasc_data):
     #Save the data
     vasc_data.save_data("test_files\\test_output.xlsx")
     print("Data saved to test_files\\test_output.xlsx")
-
 
 def test_retrival_methods(vasc_data):
 
@@ -66,7 +46,8 @@ def main():
     print("Constructing from a singular master data sheet")
     construct_test = "test_files\\FullLeaf_LengthByDistance.xlsx" 
     data_constructed.construct_master_sheet_df(construct_test)
-
+    print((data_constructed.id_sheet))
+    
     #There are two different ways to load data:
     id_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\P5 Length Density Vectors - file list.csv"
     density_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\C3-Length Density Vectors-P5-vessel length by retina area.tif"   
