@@ -100,6 +100,7 @@ class DataManager:
         #Align the rasters
         self.align_rasters(suffix)
 
+
     def create_knee_identifier(self, master_df, length_columns):
         # @title ### Create a knee identifier
         Knees = np.zeros(master_df.shape[0])
@@ -250,6 +251,9 @@ class DataManager:
             else:     
                 self.density_dict[raster_sheet+suffix] = pd.DataFrame(empty_raster_data) #This is a problem, we need to be able to merge datasheets
                 self.sheet_names.append(raster_sheet+suffix)
+
+    def realign_and_knee(self):
+        ""
 
     #Functions meant for saving the data
     def save_data(self, output_path):
