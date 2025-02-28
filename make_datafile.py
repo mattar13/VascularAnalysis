@@ -179,18 +179,13 @@ class DataManager:
 
     def align_rasters(self, suffix):
         for raster_name in self.sheet_names:
-            print(f"Aligning {raster_name}")
-            id_sheet = self.id_dict[raster_name] #Pick the id_sheet
-
             if raster_name == self.main_layer_sheet+suffix:
                 self.density_dict[raster_name] = self.raster_dict[raster_name]
                 self.id_sheet["KneeSuperficial"] = self.id_sheet["Knee"]
             else: #We need to align the data if it is not the main layer
                 #Make an empty density sheet
                 empty_density_raster = np.zeros((self.raster_rows, self.raster_cols))
-                print(raster_name)
                 id_sheet_section = self.id_dict[raster_name] #Pick the id_sheet
-                print(id_sheet_section)
                 density_raster = self.raster_dict[raster_name] #Pick the density raster
 
                 for idx, row in self.id_sheet.iterrows():
@@ -203,10 +198,8 @@ class DataManager:
                         empty_density_raster[idx, :] = raster_row
                         self.density_dict[raster_name] = pd.DataFrame(empty_density_raster)
                         if "Intermediate" in raster_name:
-                           print("Int")
                            self.id_sheet.at[idx, "KneeIntermediate"] = match_row.Knee.values[0]
                         elif "Deep" in raster_name:
-                           print("Deep")
                            self.id_sheet.at[idx, "KneeDeep"] = match_row.Knee.values[0]
                     else:
                         continue
@@ -219,7 +212,6 @@ class DataManager:
     def construct_master_id_tiff_df(self, id_fn, density_fn, suffix = "Diving", raster_sheet_names = ["Superficial", "Intermediate"]):
         #The caveat behind this is that an ID file needs to be opened already
         id_df = pd.read_csv(id_fn) #Read the csv id file for the density vec
-        print(id_df.shape)
         id_df['ImageName'] = id_df['File'].apply(lambda x: re.search(r'- (.*)\.tif', x).group(1) if pd.notna(x) else None)
         density_array = tiff.imread(density_fn)  # Read all z-stacks
         density_array = adjust_to_4d(density_array)  # Adjust to 4D array
@@ -243,7 +235,6 @@ class DataManager:
                     #    empty_raster_data[idx, :] = rows[1, :]
             sheet_key = raster_sheet+suffix
             if sheet_key in self.sheet_names:
-                print("sheet exists")
                 existing_df = self.density_dict[sheet_key].to_numpy()
                 new_df = empty_raster_data
                 updated_df = existing_df + new_df
