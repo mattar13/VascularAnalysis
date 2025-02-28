@@ -33,7 +33,6 @@ def test_retrival_methods(vasc_data):
     sample_df = vasc_data.get_index_with_category(age = 9)
     #print(sample_df)
     sample_sheets = vasc_data.get_density_with_category(sheetname = "SuperficialDiving", age = 9)
-    print(sample_sheets)
     #print(sample_sheets[0])
 
 def test_construction():
@@ -44,15 +43,19 @@ def test_construction():
     print("Constructing from a singular master data sheet")
     construct_test = "test_files\\FullLeaf_LengthByDistance.xlsx" 
     data_constructed.construct_master_sheet_df(construct_test)
-
+    
     #There are two different ways to load data:
-    id_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\P5 Length Density Vectors - file list.csv"
-    density_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\C3-Length Density Vectors-P5-vessel length by retina area.tif"   
+    id_fn = "test_files\\P5 Length Density Vectors - file list.csv"
+    density_fn = "test_files\\C3-Length Density Vectors-P5-vessel length by retina area.tif"   
     data_constructed.construct_master_id_tiff_df(id_fn, density_fn, suffix = "Density", raster_sheet_names = ["Superficial"])
 
-    id_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\Diving vessel density files.csv"
-    density_fn = "C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test_files\\Diving vessel density vectors.tif"
+    id_fn = "test_files\\Diving vessel density files.csv"
+    density_fn = "test_files\\Diving vessel density vectors.tif"
     data_constructed.construct_master_id_tiff_df(id_fn, density_fn, suffix = "Diving", raster_sheet_names = ["Superficial", "Intermediate"])
+    
+    identification_sheet = data_constructed.id_sheet
+    knee_data = identification_sheet[['KneeSuperficial', 'KneeDeep', 'KneeIntermediate']].to_numpy()
+    #print(identification_sheet.loc[1,"KneeDeep"])
     
     return test_construction
 
@@ -60,7 +63,7 @@ def main():
     "Testing main functions"
     
     data_constructed = test_construction()
-    
+
     test_saving(data_constructed)
 
 if __name__ == "__main__":
