@@ -86,31 +86,96 @@ class DataManager:
         #This creates the knee identifier
         #print("Adding knee identifier")
         #Does it break if I remove this line?
-        master_df = self.create_knee_identifier(master_df, length_columns)
 
         identifier_columns = [col for col in master_df.columns if not col.startswith('X')]
 
         #The end result of this function is to save each density raster to a seperate array
         self.density_raster_full = master_df[length_columns]
         self.id_sheet_full = master_df[identifier_columns]
-        
+    
         #Seperate the data raster by layer
         self.seperate_by_layer(suffix)
                
         #Align the rasters
         self.align_rasters(suffix)
 
+    def seperate_by_layer(self, suffix):
+        """
+        Seperates the master dataframe by layer
 
-    def create_knee_identifier(self, master_df, length_columns):
-        # @title ### Create a knee identifier
-        Knees = np.zeros(master_df.shape[0])
-        Scores = np.zeros(master_df.shape[0])
-        #Pick the threshold to order the data by
-        threshold = 0.01 #Change this threshold if we want this to discover different points
-        for col in range(1, master_df.shape[0]):
+        main_layer_sheet is referring to the sheet that contains the most
+        
+        """
+        #Pull out all the unique laters
+        unique_layers = self.id_sheet_full['Layer'].unique()
+        unique_layers = unique_layers[unique_layers != 0]
+    
+        #Initialize a dictionary to store the layers
+        self.raster_dict = {}
+        self.id_dict = {}
+        #self.knees = self.id_sheet_full["Knee"].to_numpy()
+
+        #Iterate through all unique layers
+        for layer in unique_layers:
+            #print(layer)
+            #if a layer is "0" ignore. I hate non general solutions, but here we go
+            if layer == 0:
+                continue
+
+            layer_idxs = self.id_sheet_full['Layer'] == layer
+            #print(f"Layer: {layer}")
+            #print(self.id_sheet_full[layer_idxs])
+            self.raster_dict[layer+suffix] = self.density_raster_full[layer_idxs]
+            self.id_dict[layer+suffix] = self.id_sheet_full[layer_idxs]
+
+            #Add the knees onto the end
+            self.sheet_names.append(layer+suffix)
+
+        self.id_sheet = self.id_dict[self.main_layer_sheet+suffix].reset_index(drop = True)
+        #self.id_sheet.drop(columns = ['Layer', 'Score'], inplace = True)
+        self.id_sheet.drop(columns = ["ManualLengthAve", "ManualLengthNonZeroAve"], inplace = True)
+        #Now we need to add the knee values back.
+        
+        self.raster_rows = len(self.id_sheet)
+
+    def align_rasters(self, suffix):
+        for raster_name in self.sheet_names:
+            if raster_name == self.main_layer_sheet+suffix:
+                self.density_dict[raster_name] = self.raster_dict[raster_name]
+                #self.id_sheet["KneeSuperficial"] = self.id_sheet["Knee"]
+            else: #We need to align the data if it is not the main layer
+                #Make an empty density sheet
+                empty_density_raster = np.zeros((self.raster_rows, self.raster_cols))
+                id_sheet_section = self.id_dict[raster_name] #Pick the id_sheet
+                density_raster = self.raster_dict[raster_name] #Pick the density raster
+
+                for idx, row in self.id_sheet.iterrows():
+                    exp_id = row['ExpNum'] #This
+                    replicate = row['Replicate'] #This
+                    ImageName = row['ImageName'] #and this are identifiers
+                    #match_row = id_sheet_section[(id_sheet_section['ExpNum'] == exp_id) & (id_sheet_section['Replicate'] == replicate) & (id_sheet_section['ImageName'] == ImageName)]
+                    raster_row = density_raster[(id_sheet_section['ExpNum'] == exp_id) & (id_sheet_section['Replicate'] == replicate) & (id_sheet_section['ImageName'] == ImageName)]
+                    if raster_row.shape[0]!=0:
+                        empty_density_raster[idx, :] = raster_row
+                        self.density_dict[raster_name] = pd.DataFrame(empty_density_raster)
+                        #if "Intermediate" in raster_name:
+                        #   self.id_sheet.at[idx, "KneeIntermediate"] = match_row.Knee.values[0]
+                        #elif "Deep" in raster_name:
+                        #   self.id_sheet.at[idx, "KneeDeep"] = match_row.Knee.values[0]
+                    else:
+                        continue
+                    
+
+                #print(empty_density_raster.shape)
+        #print("Getting it working")
+
+    def extract_knee_identifier(self, raster_arr, threshold = 0.01):
+        Knees = np.zeros(raster_arr.shape[0])
+        Scores = np.zeros(raster_arr.shape[0])
+        for col in range(1, raster_arr.shape[0]):
             score = 0 #This is a winning score
-            nz_vals_below_thresh = np.where(master_df.iloc[col][length_columns]<threshold)[0]
-            nz_vals_above_thresh = np.where(master_df.iloc[col][length_columns]>threshold)[0]
+            nz_vals_below_thresh = np.where(raster_arr[col, :]<threshold)[0]
+            nz_vals_above_thresh = np.where(raster_arr[col, :]>threshold)[0]
             fBT = fAT = 0 #Zero out all points after the analysis
             lBt = lAT = 0#len(length_columns) #Set the limits to infinity
             #find the First value below the thresh
@@ -131,83 +196,14 @@ class DataManager:
                     Knees[col] = lAT #Set the knee to the first above threshold
 
             Scores[col] = score
+        return Knees, Scores
 
-        master_df.insert(master_df.shape[1], "Knee", Knees)
-        master_df.insert(master_df.shape[1], "Score", Scores)
-        return master_df
-
-    def seperate_by_layer(self, suffix):
-        """
-        Seperates the master dataframe by layer
-
-        main_layer_sheet is referring to the sheet that contains the most
-        
-        """
-        #Pull out all the unique laters
-        unique_layers = self.id_sheet_full['Layer'].unique()
-        unique_layers = unique_layers[unique_layers != 0]
-    
-        #Initialize a dictionary to store the layers
-        self.raster_dict = {}
-        self.id_dict = {}
-        self.knees = self.id_sheet_full["Knee"].to_numpy()
-
-        #Iterate through all unique layers
-        for layer in unique_layers:
-            #print(layer)
-            #if a layer is "0" ignore. I hate non general solutions, but here we go
-            if layer == 0:
-                continue
-
-            layer_idxs = self.id_sheet_full['Layer'] == layer
-            #print(f"Layer: {layer}")
-            #print(self.id_sheet_full[layer_idxs])
-            self.raster_dict[layer+suffix] = self.density_raster_full[layer_idxs]
-            id_dict = self.id_dict[layer+suffix] = self.id_sheet_full[layer_idxs]
-
-            #Add the knees onto the end
-            self.sheet_names.append(layer+suffix)
-
-        self.id_sheet = self.id_dict[self.main_layer_sheet+suffix].reset_index(drop = True)
-        #self.id_sheet.drop(columns = ['Layer', 'Score'], inplace = True)
-        self.id_sheet.drop(columns = ["ManualLengthAve", "ManualLengthNonZeroAve"], inplace = True)
-        self.id_sheet["KneeSuperficial"] = 0
-        self.id_sheet["KneeDeep"] = 0
-        self.id_sheet["KneeIntermediate"] = 0
-        #Now we need to add the knee values back.
-        
-        self.raster_rows = len(self.id_sheet)
-
-    def align_rasters(self, suffix):
+    def create_knee_identifier(self):
         for raster_name in self.sheet_names:
-            if raster_name == self.main_layer_sheet+suffix:
-                self.density_dict[raster_name] = self.raster_dict[raster_name]
-                self.id_sheet["KneeSuperficial"] = self.id_sheet["Knee"]
-            else: #We need to align the data if it is not the main layer
-                #Make an empty density sheet
-                empty_density_raster = np.zeros((self.raster_rows, self.raster_cols))
-                id_sheet_section = self.id_dict[raster_name] #Pick the id_sheet
-                density_raster = self.raster_dict[raster_name] #Pick the density raster
-
-                for idx, row in self.id_sheet.iterrows():
-                    exp_id = row['ExpNum'] #This
-                    replicate = row['Replicate'] #This
-                    ImageName = row['ImageName'] #and this are identifiers
-                    match_row = id_sheet_section[(id_sheet_section['ExpNum'] == exp_id) & (id_sheet_section['Replicate'] == replicate) & (id_sheet_section['ImageName'] == ImageName)]
-                    raster_row = density_raster[(id_sheet_section['ExpNum'] == exp_id) & (id_sheet_section['Replicate'] == replicate) & (id_sheet_section['ImageName'] == ImageName)]
-                    if raster_row.shape[0]!=0:
-                        empty_density_raster[idx, :] = raster_row
-                        self.density_dict[raster_name] = pd.DataFrame(empty_density_raster)
-                        if "Intermediate" in raster_name:
-                           self.id_sheet.at[idx, "KneeIntermediate"] = match_row.Knee.values[0]
-                        elif "Deep" in raster_name:
-                           self.id_sheet.at[idx, "KneeDeep"] = match_row.Knee.values[0]
-                    else:
-                        continue
-                    
-
-                #print(empty_density_raster.shape)
-        #print("Getting it working")
+            density_arr = self.density_dict[raster_name].to_numpy()
+            knees, scores = self.extract_knee_identifier(density_arr)
+            self.id_sheet["Knee"+raster_name] = knees
+        #self.id_sheet.drop(columns = ["Knees"])
 
     #These functions are for constructing the master sheet from a ID sheet and .tif files
     def construct_master_id_tiff_df(self, id_fn, density_fn, suffix = "Diving", raster_sheet_names = ["Superficial", "Intermediate"]):
@@ -230,10 +226,7 @@ class DataManager:
                     rows = density_array[MATCH['Slice']-1, :, MATCH['Row']-1, :]
                     rows[np.isnan(rows)] = 0.0
                     empty_raster_data[idx, :] = rows[raster_id, :]
-                    #if raster_sheet == "Superficial":
-                    #    empty_raster_data[idx, :] = rows[0, :]
-                    #elif raster_sheet == "Intermediate":
-                    #    empty_raster_data[idx, :] = rows[1, :]
+
             sheet_key = raster_sheet+suffix
             if sheet_key in self.sheet_names:
                 existing_df = self.density_dict[sheet_key].to_numpy()
