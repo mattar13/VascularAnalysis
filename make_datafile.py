@@ -237,9 +237,6 @@ class DataManager:
                 self.density_dict[raster_sheet+suffix] = pd.DataFrame(empty_raster_data) #This is a problem, we need to be able to merge datasheets
                 self.sheet_names.append(raster_sheet+suffix)
 
-    def realign_and_knee(self):
-        ""
-
     #Functions meant for saving the data
     def save_data(self, output_path):
         #Save the data to an output path
@@ -330,7 +327,7 @@ class DataManager:
         else:
             return None
         
-    def get_density_with_category(self, sheetname = None, **kwargs):
+    def get_raster_with_category(self, sheetname = None, **kwargs):
         """
         Returns the rows of the first sheet that matches the given category parameters.
         """
