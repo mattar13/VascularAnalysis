@@ -1,4 +1,4 @@
-from make_datafile import DataManager
+from DataManager.src.make_datafile import DataManager
 
 def test_loading():
 
