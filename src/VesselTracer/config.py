@@ -20,6 +20,11 @@ class PipelineConfig:
     min_object_size: int
     close_radius: int
     prune_length: int
+    
+    # Image properties (set by load_vessel_image)
+    pixel_size_x: float = 0.0
+    pixel_size_y: float = 0.0
+    pixel_size_z: float = 0.0
 
     @classmethod
     def from_yaml(cls, config_path: Optional[str] = None) -> 'PipelineConfig':
@@ -72,23 +77,28 @@ class PipelineConfig:
             yaml.safe_dump(config_dict, f, default_flow_style=False)
 
     def print_config(self):
-        """Print the configuration in a formatted, readable way."""
+        """Print the configuration in a formatted, readable way with descriptions."""
         print("\nVesselTracer Pipeline Configuration")
         print("==================================")
         
         print("\nROI Settings:")
-        print(f"  Micron ROI: {self.micron_roi}")
-        print(f"  Center X: {self.center_x}")
-        print(f"  Center Y: {self.center_y}")
+        print(f"    micron_roi  -> {self.micron_roi:8} [Size of region of interest in microns]")
+        print(f"    center_x    -> {self.center_x:8} [X coordinate of ROI center]")
+        print(f"    center_y    -> {self.center_y:8} [Y coordinate of ROI center]")
         
         print("\nScale Bar Settings:")
-        print(f"  Length: {self.scalebar_length}")
-        print(f"  Position X: {self.scalebar_x}")
-        print(f"  Position Y: {self.scalebar_y}")
+        print(f"    scalebar_length  -> {self.scalebar_length:8} [Length of scale bar in plot units]")
+        print(f"    scalebar_x       -> {self.scalebar_x:8} [X position of scale bar in plot]")
+        print(f"    scalebar_y       -> {self.scalebar_y:8} [Y position of scale bar in plot]")
         
         print("\nPre-processing Parameters:")
-        print(f"  Gaussian Sigma: {self.gauss_sigma}")
-        print(f"  Minimum Object Size: {self.min_object_size}")
-        print(f"  Closing Radius: {self.close_radius} voxels")
-        print(f"  Pruning Length: {self.prune_length} units")
+        print(f"    gauss_sigma      -> {self.gauss_sigma:8} [Gaussian smoothing sigma before Frangi/threshold]")
+        print(f"    min_object_size  -> {self.min_object_size:8} [Minimum object size to keep after segmentation]")
+        print(f"    close_radius     -> {self.close_radius:8} [Closing operation radius in voxels]")
+        print(f"    prune_length     -> {self.prune_length:8} [Length to prune skeleton branches]")
+        
+        print("\nImage Properties:")
+        print(f"    pixel_size_x     -> {self.pixel_size_x:8.3f} [Pixel size in x direction (µm/pixel)]")
+        print(f"    pixel_size_y     -> {self.pixel_size_y:8.3f} [Pixel size in y direction (µm/pixel)]")
+        print(f"    pixel_size_z     -> {self.pixel_size_z:8.3f} [Pixel size in z direction (µm/pixel)]")
         print("\n")
