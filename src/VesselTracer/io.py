@@ -3,15 +3,17 @@ import numpy as np
 import xmltodict
 from czifile import CziFile
 import tifffile as tiff
+from .config import PipelineConfig
 
-def load_vessel_image(path: str) -> Tuple[np.ndarray, float, float, float]:
-    """Load a 3-D vessel image and voxel sizes (µm).
+def load_vessel_image(path: str, config: PipelineConfig) -> np.ndarray:
+    """Load a 3-D vessel image and update config with voxel sizes (µm).
     
     Args:
         path: Path to CZI file
+        config: PipelineConfig object to update with pixel sizes
         
     Returns:
-        tuple: (image_volume, pixel_size_x, pixel_size_y, pixel_size_z)
+        np.ndarray: Image volume
     """
     with CziFile(path) as czi:
         vol = czi.asarray()[0, 0, 0, 0, ::-1, :, :, 0]
@@ -23,21 +25,19 @@ def load_vessel_image(path: str) -> Tuple[np.ndarray, float, float, float]:
                 return 1 / float(d["Value"]) / 1e6
         raise KeyError(axis_id)
 
-    px_x, px_y, px_z = map(_px_um, ("X", "Y", "Z"))
-    vol = normalize_image(vol.astype("float32"))
-    return vol, px_x, px_y, px_z
-
-def normalize_image(arr: np.ndarray) -> np.ndarray:
-    """Normalize image array to [0,1] range.
+    # Update config with pixel sizes
+    config.pixel_size_x = _px_um("X")
+    config.pixel_size_y = _px_um("Y")
+    config.pixel_size_z = _px_um("Z")
     
-    Args:
-        arr: Input array
-        
-    Returns:
-        np.ndarray: Normalized array
-    """
-    arr = arr.astype("float32")
-    return (arr - arr.min()) / (arr.max() - arr.min() + 1e-8)
+    vol = normalize_image(vol.astype("float32"))
+    return vol
+
+def normalize_image(img: np.ndarray) -> np.ndarray:
+    """Normalize image to [0,1] range."""
+    img = img.astype(np.float32)
+    img = (img - img.min()) / (img.max() - img.min())
+    return img
 
 def save_vessel_stack(path: str, stack: np.ndarray) -> None:
     """Save vessel stack as TIFF file with proper metadata.
