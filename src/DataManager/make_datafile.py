@@ -1,10 +1,3 @@
-import pandas as pd
-import numpy as np
-import tifffile as tiff #Opening .tif files
-import re
-import os
-from auxillary_functions import adjust_to_4d, pad_columns
-
 class DataManager:
     """
     A simple class to handle loading and storing multiple dataframes.
