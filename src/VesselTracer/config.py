@@ -29,7 +29,7 @@ class PipelineConfig:
             config_path: Path to YAML config file. If None, uses default config.
         """
         if config_path is None:
-            config_path = Path(__file__).parent.parent.parent / 'default_vessel_config.yaml'
+            config_path = Path(__file__).parent.parent.parent / 'config' / 'default_vessel_config.yaml'
         
         with open(config_path, 'r') as f:
             config_dict = yaml.safe_load(f)
