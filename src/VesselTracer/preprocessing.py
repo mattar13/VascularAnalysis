@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.ndimage import gaussian_filter
+from .config import PipelineConfig
 
 def crop_and_detrend(vol: np.ndarray,
                      center: tuple[int, int],
@@ -23,5 +24,14 @@ def crop_and_detrend(vol: np.ndarray,
     roi = roi - (m * z + b)[:, None, None]
     return roi
 
-def smooth(vol: np.ndarray, sigma: float) -> np.ndarray:
-    return gaussian_filter(vol, sigma)
+def smooth(vol: np.ndarray, config: PipelineConfig) -> np.ndarray:
+    """Apply Gaussian smoothing to volume.
+    
+    Args:
+        vol: Input volume
+        config: PipelineConfig object containing smoothing parameters
+        
+    Returns:
+        Smoothed volume
+    """
+    return gaussian_filter(vol, sigma=config.gauss_sigma)

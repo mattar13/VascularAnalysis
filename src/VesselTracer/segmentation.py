@@ -24,13 +24,12 @@ def extract_roi(volume: np.ndarray, config: PipelineConfig) -> np.ndarray:
     
     return roi
 
-def segment_binary(vol: np.ndarray, min_size: int = 64, close_radius: int = 1) -> np.ndarray:
+def segment_binary(vol: np.ndarray, config: PipelineConfig) -> np.ndarray:
     """Segment vessels using binary thresholding.
     
     Args:
         vol: Input volume
-        min_size: Minimum object size to keep
-        close_radius: Radius for binary closing operation
+        config: PipelineConfig object containing segmentation parameters
         
     Returns:
         Binary segmentation mask
@@ -40,10 +39,10 @@ def segment_binary(vol: np.ndarray, min_size: int = 64, close_radius: int = 1) -
     binary = vol > thresh
     
     # Remove small objects
-    binary = remove_small_objects(binary, min_size=min_size)
+    binary = remove_small_objects(binary, min_size=config.min_object_size)
     
     # Binary closing to fill small gaps
-    if close_radius > 0:
-        binary = binary_closing(binary, ball(close_radius))
+    if config.close_radius > 0:
+        binary = binary_closing(binary, ball(config.close_radius))
         
     return binary
