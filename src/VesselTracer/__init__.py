@@ -14,20 +14,13 @@ Main Components:
 - io: Input/output operations
 """
 
-
 from .preprocessing import smooth
 from .segmentation import segment_binary
 from .skeletonize import skeleton_stats
 from .plotting import show_max_projection
 from .config import PipelineConfig
-from .analysis import (
-    analyze_vessel_network,
-    compute_vessel_metrics
-)
-from .io import (
-    load_image_stack,
-    save_results
-)
+from .analysis import analyze_vessel_layers, segment_vessel_paths
+from .io import load_vessel_image, normalize_image, save_vessel_stack
 
 __version__ = '0.1.0'
 __author__ = 'Matt'
@@ -40,10 +33,11 @@ __all__ = [
     'skeleton_stats',
     'show_max_projection',
     'PipelineConfig',
-    'analyze_vessel_network',
-    'compute_vessel_metrics',
-    'load_image_stack',
-    'save_results',
+    'analyze_vessel_layers',
+    'segment_vessel_paths',
+    'load_vessel_image',
+    'normalize_image',
+    'save_vessel_stack',
     
     # Module imports
     'preprocessing',
@@ -51,8 +45,7 @@ __all__ = [
     'skeletonize',
     'analysis',
     'plotting',
-    'config',
-    'io'
+    'config'
 ]
 
 # Import modules for backward compatibility
@@ -62,6 +55,5 @@ from . import (
     skeletonize,
     analysis,
     plotting,
-    config,
-    io
+    config
 )
