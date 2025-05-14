@@ -147,7 +147,7 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
               'w-' if cmap == 'gray' else 'k-', linewidth=2)
     
     # Plot Y projection (top right)
-    im_y = ax_y.imshow(y_proj, cmap=cmap)
+    im_y = ax_y.imshow(y_proj.T, cmap=cmap)  # Transpose y_proj to rotate 90 degrees
     ax_y.set_title('Y proj')
     ax_y.axis('on')
     if depth_coded and mode == 'binary':

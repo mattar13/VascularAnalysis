@@ -30,7 +30,7 @@ def main():
     plt.savefig('test/test_images/vessel_projections_smoothed.png', dpi=300, bbox_inches='tight')
     
     # Create binary projection plot
-    fig2, axes2 = plot_projections(tracer, mode='binary')
+    fig2, axes2 = plot_projections(tracer, mode='binary', depth_coded=True)
     plt.savefig('test/test_images/vessel_projections_binary.png', dpi=300, bbox_inches='tight')
     
     # Create z-profile plot with regions
