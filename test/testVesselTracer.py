@@ -27,15 +27,15 @@ def main():
     
     # Create smoothed projection plot
     fig1, axes1 = plot_projections(tracer, mode='smoothed')
-    plt.savefig('test_images/vessel_projections_smoothed.png', dpi=300, bbox_inches='tight')
+    plt.savefig('test/test_images/vessel_projections_smoothed.png', dpi=300, bbox_inches='tight')
     
     # Create binary projection plot
     fig2, axes2 = plot_projections(tracer, mode='binary')
-    plt.savefig('test_images/vessel_projections_binary.png', dpi=300, bbox_inches='tight')
+    plt.savefig('test/test_images/vessel_projections_binary.png', dpi=300, bbox_inches='tight')
     
     # Create z-profile plot with regions
     fig3, ax3 = plot_mean_zprofile(tracer)
-    plt.savefig('test_images/vessel_distribution.png', dpi=300, bbox_inches='tight')
+    plt.savefig('test/test_images/vessel_distribution.png', dpi=300, bbox_inches='tight')
     
     # Print frame range information
     print("\nValid frame range:")

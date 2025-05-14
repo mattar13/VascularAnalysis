@@ -36,9 +36,9 @@ class VesselTracer:
             config = yaml.safe_load(f)
             
         # ROI settings
-        self.micron_roi = config['roi_volume']['micron_roi']
-        self.center_x = config['roi_volume']['center_x']
-        self.center_y = config['roi_volume']['center_y']
+        self.micron_roi = config['roi']['micron_roi']
+        self.center_x = config['roi']['center_x']
+        self.center_y = config['roi']['center_y']
         
         # Scale bar settings
         self.scalebar_length = config['scalebar']['length']
