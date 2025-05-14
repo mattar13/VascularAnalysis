@@ -64,7 +64,7 @@ def plot_mean_zprofile(tracer, ax: Optional[plt.Axes] = None) -> Tuple[plt.Figur
     plt.tight_layout()
     return fig, ax
 
-def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed') -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
+def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_coded: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections and intensity profile.
     
     Creates a figure with:
@@ -77,6 +77,8 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed') -> Tuple[
         tracer: VesselTracer instance with loaded data
         figsize: Figure size tuple (width, height)
         mode: Visualization mode, either 'smoothed' or 'binary'
+        depth_coded: If True, creates depth-coded projections where intensity
+                    represents z-position (only works with binary mode)
         
     Returns:
         Tuple of (figure, dict of axes)
@@ -104,32 +106,61 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed') -> Tuple[
     # Get data based on mode
     data = tracer.smoothed if mode == 'smoothed' else tracer.binary
     
-    # Get projections
-    z_proj = np.max(data, axis=0)  # xy view
-    y_proj = np.max(data, axis=1)  # xz view
-    x_proj = np.max(data, axis=2)  # yz view
-    mean_profile = np.mean(data, axis=(1,2))  # z profile
+    if depth_coded and mode == 'binary':
+        # Create depth-coded volume
+        Z, Y, X = data.shape
+        depth_vol = np.zeros_like(data, dtype=float)
+        for z in range(Z):
+            depth_vol[z] = data[z] * z
+            
+        # Create depth-normalized projections
+        z_proj = np.max(depth_vol, axis=0)
+        y_proj = np.max(depth_vol, axis=1)
+        x_proj = np.max(depth_vol, axis=2)
+        
+        # Normalize depth projections to [0,1]
+        z_proj = z_proj / (Z-1) if z_proj.max() > 0 else z_proj
+        y_proj = y_proj / (Z-1) if y_proj.max() > 0 else y_proj
+        x_proj = x_proj / (Z-1) if x_proj.max() > 0 else x_proj
+        
+        # Use a colormap that shows depth well
+        cmap = plt.cm.viridis
+    else:
+        # Regular projections
+        z_proj = np.max(data, axis=0)
+        y_proj = np.max(data, axis=1)
+        x_proj = np.max(data, axis=2)
+        cmap = 'gray'
     
     # Plot Z projection (top left)
-    ax_z.imshow(z_proj, cmap='gray')
-    ax_z.set_title(f'Z proj ({mode})')
+    im_z = ax_z.imshow(z_proj, cmap=cmap)
+    title = f'Z proj ({mode})'
+    if depth_coded and mode == 'binary':
+        title += ' [depth-coded]'
+        plt.colorbar(im_z, ax=ax_z, label='Z position (normalized)')
+    ax_z.set_title(title)
     ax_z.axis('on')
     
     # Add scale bar (assuming we have pixel size)
     scalebar_length_pixels = int(50 / tracer.pixel_size_x)  # 50 micron scale bar
     ax_z.plot([20, 20 + scalebar_length_pixels], [z_proj.shape[0] - 20] * 2, 
-              'w-', linewidth=2)
+              'w-' if cmap == 'gray' else 'k-', linewidth=2)
     
     # Plot Y projection (top right)
-    ax_y.imshow(y_proj, cmap='gray')
+    im_y = ax_y.imshow(y_proj, cmap=cmap)
     ax_y.set_title('Y proj')
     ax_y.axis('on')
+    if depth_coded and mode == 'binary':
+        plt.colorbar(im_y, ax=ax_y, label='Z position (normalized)')
     
     # Plot X projection (bottom left)
-    ax_x.imshow(x_proj, cmap='gray')
+    im_x = ax_x.imshow(x_proj, cmap=cmap)
     ax_x.axis('on')
+    if depth_coded and mode == 'binary':
+        plt.colorbar(im_x, ax=ax_x, label='Z position (normalized)')
     
     # Plot mean intensity profile (bottom right)
+    mean_profile = np.mean(data, axis=(1,2))
     z_positions = np.arange(len(mean_profile))
     ax_profile.plot(mean_profile, z_positions, 'b-')
     ax_profile.set_ylim(ax_profile.get_ylim()[::-1])  # Invert y-axis
