@@ -14,55 +14,67 @@ def show_max_projection(vol: np.ndarray, ax: Optional[plt.Axes] = None) -> None:
     ax.imshow(np.max(vol, axis=0))
     ax.axis('off')
 
-def plot_mean_zprofile(tracer, ax: Optional[plt.Axes] = None) -> Tuple[plt.Figure, plt.Axes]:
-    """Plot the mean z-profile with detected regions.
+def plot_mean_zprofile(tracer, ax: Optional[plt.Axes] = None) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
+    """Plot the mean z-profile with detected regions alongside y-projection.
     
     Args:
         tracer: VesselTracer instance with loaded data
         ax: Optional matplotlib axes to plot on. If None, creates new figure.
         
     Returns:
-        Tuple of (figure, axes) used for plotting
+        Tuple of (figure, dict of axes)
     """
-    # Get mean z-profile
+    # Get mean z-profile and y-projection
     mean_zprofile = tracer.get_projection([1, 2], operation='mean')
+    y_proj = np.max(tracer.smoothed if hasattr(tracer, 'smoothed') else tracer.roi_volume, axis=2)
     
     # Determine regions if not already done
     if not hasattr(tracer, 'region_bounds'):
         tracer.determine_regions()
     
-    # Create figure if needed
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(10, 6))
-    else:
-        fig = ax.figure
+    # Create figure with two subplots
+    fig, (ax0, ax1) = plt.subplots(1, 2, figsize=(8, 4), 
+                                  gridspec_kw={'width_ratios': [3, 1]})
     
-    # Plot profile
-    z_positions = np.arange(len(mean_zprofile))
-    ax.plot(z_positions, mean_zprofile, 'k-', label='Mean Intensity')
+    # Plot y-projection
+    ax0.imshow(y_proj, cmap='gray', aspect='auto')
+    ax0.set_title('Y Projection')
+    
+    # Plot mean z-profile
+    Z = len(mean_zprofile)
+    z_positions = np.arange(Z)
+    ax1.plot(mean_zprofile, z_positions, color='black')
+    
+    # Define colors for layers
+    layer_colors = ['tab:purple', 'tab:red', 'tab:blue']
     
     # Plot regions
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c']  # Blue, Orange, Green
-    for (region, (peak, sigma, bounds)), color in zip(tracer.region_bounds.items(), colors):
-        # Plot peak
-        ax.axvline(peak, color=color, linestyle='--', alpha=0.5)
+    for i, (region, (peak, sigma, bounds)) in enumerate(tracer.region_bounds.items()):
+        # Add horizontal lines at peaks
+        ax0.axhline(peak, color='red', linestyle='--', alpha=0.5)
+        ax1.axhline(peak, color='red', linestyle='--', alpha=0.5)
         
-        # Plot bounds
-        ax.axvspan(bounds[0], bounds[1], color=color, alpha=0.2, label=region)
-        
-        # Add text annotation
-        ax.text(peak, ax.get_ylim()[1], region, 
-                rotation=90, va='bottom', ha='right', color=color)
+        # Add spans for regions
+        ax0.axhspan(bounds[0], bounds[1], color=layer_colors[i], alpha=0.25, label=region)
+        ax1.axhspan(bounds[0], bounds[1], color=layer_colors[i], alpha=0.5, label=region)
     
-    # Customize plot
-    ax.set_xlabel('Z Position (slices)')
-    ax.set_ylabel('Mean Vessel Density')
-    ax.set_title('Vessel Distribution Across Z-Axis')
-    ax.legend()
-    ax.grid(True, alpha=0.3)
+    # Customize ax1 (z-profile)
+    ax1.invert_yaxis()
+    ax1.set_xlabel('Intensity')
+    ax1.set_ylabel('')  # Remove y-label since it's shared
+    
+    # Add legend to the first axis
+    ax0.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     
     plt.tight_layout()
-    return fig, ax
+    
+    # Return figure and axes dictionary
+    axes = {
+        'y_proj': ax0,
+        'z_profile': ax1
+    }
+    
+    return fig, axes
 
 def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_coded: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections and intensity profile.

@@ -1,4 +1,5 @@
 from DataManager import DataManager
+import pandas as pd
 
 # from DataManager import DataManager
 def test_loading():
