@@ -1,3 +1,5 @@
+import pandas as pd
+
 class DataManager:
     """
     A simple class to handle loading and storing multiple dataframes.
