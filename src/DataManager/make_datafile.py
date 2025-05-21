@@ -1,4 +1,8 @@
 import pandas as pd
+import numpy as np
+import tifffile as tiff #Opening .tif files
+import re
+import os
 
 class DataManager:
     """
