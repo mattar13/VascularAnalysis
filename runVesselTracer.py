@@ -48,22 +48,23 @@ def run_analysis(args):
     try:
         # Initialize VesselTracer
         tracer = VesselTracer(str(input_path), config_path=args.config)
-        
+        tracer.print_config()
         # Run analysis pipeline
         print("Running analysis pipeline...")
         tracer.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
-        
-        if not args.skip_smoothing:
-            print("Smoothing...")
-            tracer.smooth()
-        
-        if not args.skip_binarization:
-            print("Binarizing...")
-            tracer.binarize()
+        tracer.detrend()
+        tracer.smooth()
+        tracer.binarize()
+        tracer.skeletonize()
         
         if not args.skip_regions:
             print("Detecting regions...")
-            tracer.determine_regions()
+            regions = tracer.determine_regions()
+            for region, (peak, sigma, bounds) in regions.items():
+                print(f"\n{region}:")
+                print(f"  Peak position: {peak:.1f}")
+                print(f"  Width (sigma): {sigma:.1f}")
+                print(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}")
         
         # Save visualizations
         print("Generating visualizations...")
@@ -130,6 +131,70 @@ def run_analysis(args):
                     'Mean Intensity': z_profile
                 })
                 z_profile_df.to_excel(writer, sheet_name='Z Profile', index=False)
+            
+            # Save vessel paths
+            print("Extracting vessel paths...")
+            if hasattr(tracer, 'paths'):
+                # Get coordinates of vessel paths with their labels
+                vessel_paths_df = pd.DataFrame()
+                
+                # Process each path
+                for path_id, path_coords in tracer.paths.items():
+                    # Convert path coordinates to DataFrame
+                    path_df = pd.DataFrame({
+                        'Path_ID': path_id,
+                        'X': path_coords[:, 2],  # Note: CZI files are typically ZYX order
+                        'Y': path_coords[:, 1],
+                        'Z': path_coords[:, 0]
+                    })
+                    vessel_paths_df = pd.concat([vessel_paths_df, path_df], ignore_index=True)
+                
+                # Sort by Path_ID, then Z, Y, X for better organization
+                vessel_paths_df = vessel_paths_df.sort_values(['Path_ID', 'Z', 'Y', 'X'])
+                
+                # Save to Excel
+                vessel_paths_df.to_excel(writer, sheet_name='Vessel Paths', index=False)
+                
+                # Add summary statistics
+                path_stats = pd.DataFrame({
+                    'Metric': ['Total Points', 'Number of Paths', 'Unique X', 'Unique Y', 'Unique Z', 
+                             'Min X', 'Max X', 'Min Y', 'Max Y', 'Min Z', 'Max Z'],
+                    'Value': [
+                        len(vessel_paths_df),
+                        len(tracer.paths),
+                        vessel_paths_df['X'].nunique(),
+                        vessel_paths_df['Y'].nunique(),
+                        vessel_paths_df['Z'].nunique(),
+                        vessel_paths_df['X'].min(),
+                        vessel_paths_df['X'].max(),
+                        vessel_paths_df['Y'].min(),
+                        vessel_paths_df['Y'].max(),
+                        vessel_paths_df['Z'].min(),
+                        vessel_paths_df['Z'].max()
+                    ]
+                })
+                path_stats.to_excel(writer, sheet_name='Path Statistics', index=False)
+                
+                # Add per-path statistics
+                path_details = []
+                for path_id, path_coords in tracer.paths.items():
+                    path_data = vessel_paths_df[vessel_paths_df['Path_ID'] == path_id]
+                    path_details.append({
+                        'Path_ID': path_id,
+                        'Number_of_Points': len(path_data),
+                        'Z_Range': path_data['Z'].max() - path_data['Z'].min(),
+                        'Y_Range': path_data['Y'].max() - path_data['Y'].min(),
+                        'X_Range': path_data['X'].max() - path_data['X'].min(),
+                        'Min_Z': path_data['Z'].min(),
+                        'Max_Z': path_data['Z'].max(),
+                        'Min_Y': path_data['Y'].min(),
+                        'Max_Y': path_data['Y'].max(),
+                        'Min_X': path_data['X'].min(),
+                        'Max_X': path_data['X'].max()
+                    })
+                
+                path_details_df = pd.DataFrame(path_details)
+                path_details_df.to_excel(writer, sheet_name='Path Details', index=False)
         
         print(f"Analysis complete! Results saved to: {output_dir}")
         
