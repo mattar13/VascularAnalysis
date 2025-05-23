@@ -15,6 +15,29 @@ VesselTracer is a tool designed to automate the analysis of vascular networks in
 - **Configurable Pipeline**: Customize analysis parameters through YAML configuration files
 - **CZI Support**: Native support for Zeiss CZI microscopy file format
 
+## Usage
+
+```bash
+python runVesselTracing.py input_file.czi
+```
+
+### Required arguments:
+- `input_file`: Path to the input CZI file containing 3D microscopy data
+
+### Example:
+```bash
+python runVesselTracing.py data/sample_vessels.czi
+```
+
+### What the script does:
+1. Loads and preprocesses the 3D microscopy data
+2. Detects and traces vessel paths
+3. Classifies vessels into layers (superficial, intermediate, deep)
+4. Generates visualizations including:
+   - XY, XZ, and ZY projections with depth coding
+   - 3D view of vessel paths
+   - Layer analysis plots
+
 ## Installation
 
 ```bash
