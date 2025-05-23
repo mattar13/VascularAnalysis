@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
 from VesselTracer import VesselTracer
-from VesselTracer.plotting import plot_projections, plot_mean_zprofile
+from VesselTracer.plotting import plot_projections, plot_mean_zprofile, plot_path_projections
 import numpy as np
 import pandas as pd
 
@@ -86,6 +86,12 @@ def run_analysis(args):
         fig4, axes4 = plot_mean_zprofile(tracer)
         fig4.savefig(output_dir / 'vessel_distribution.png', dpi=300, bbox_inches='tight')
         plt.close(fig4)
+        
+        # Path projections
+        if hasattr(tracer, 'paths'):
+            fig5, axes5 = plot_path_projections(tracer)
+            fig5.savefig(output_dir / 'path_projections.png', dpi=300, bbox_inches='tight')
+            plt.close(fig5)
         
         # Save analysis results
         print("Saving analysis results...")
