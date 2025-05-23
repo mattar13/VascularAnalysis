@@ -1,10 +1,13 @@
-from setuptools import setup, find_namespace_packages
+from setuptools import setup
 
 setup(
     name="VascularAnalysis",
     version="0.1.0",
-    package_dir={'': 'src'},
-    packages=find_namespace_packages(where='src'),
+    packages=['VesselTracer', 'DataManager'],
+    package_dir={
+        'VesselTracer': 'src/VesselTracer',
+        'DataManager': 'src/DataManager'
+    },
     install_requires=[
         "numpy>=1.20.0",
         "pandas>=1.3.0",
@@ -18,8 +21,6 @@ setup(
     ],
     author="Matt",
     description="Tools for vascular analysis including DataManager and VesselTracer",
-    long_description=open("README.md").read(),
-    long_description_content_type="text/markdown",
     python_requires=">=3.6",
     entry_points={
         "console_scripts": [
@@ -27,14 +28,4 @@ setup(
             "data-manager=DataManager.cli:main",
         ],
     },
-    classifiers=[
-        "Development Status :: 3 - Alpha",
-        "Intended Audience :: Science/Research",
-        "Topic :: Scientific/Engineering :: Bio-Informatics",
-        "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.6",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
-    ],
 )
