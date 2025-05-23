@@ -51,7 +51,7 @@ def run_analysis(args):
         
         # Run analysis pipeline
         print("Running analysis pipeline...")
-        tracer.segment_roi()
+        tracer.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
         
         if not args.skip_smoothing:
             print("Smoothing...")
@@ -145,4 +145,5 @@ def main():
     run_analysis(args)
 
 if __name__ == "__main__":
+    print("Starting VesselTracer...")
     main()

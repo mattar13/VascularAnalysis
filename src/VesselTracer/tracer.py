@@ -87,7 +87,7 @@ class VesselTracer:
         img = (img - img.min()) / (img.max() - img.min())
         return img
         
-    def segment_roi(self, remove_dead_frames: bool = False, dead_frame_threshold: float = 1.5) -> np.ndarray:
+    def segment_roi(self, remove_dead_frames: bool = True, dead_frame_threshold: float = 1.5) -> np.ndarray:
         """Extract and segment region of interest from volume.
         
         Extracts a region of interest based on configured center position
