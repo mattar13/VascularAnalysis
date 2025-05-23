@@ -238,23 +238,23 @@ class VesselTracer:
         ske = sk_skeletonize(self.binary)
         print(f"Skeletonized volume of shape {ske.shape}")
         
-        skeleton = Skeleton(ske)
+        # Create Skeleton object for path analysis
+        self.skeleton = Skeleton(ske)
         print(f"Created skeleton object")
         
         # Extract paths from skeleton
         self.paths = {}
-        coords = skeleton.coordinates
-        for i, path in enumerate(skeleton.paths):
+        coords = self.skeleton.coordinates
+        for i, path in enumerate(self.skeleton.paths):
             print(f"Path {i}: {path}")
-            path_coords = coords[path]
-            self.paths[i] = {
-                'coords': path_coords,  # Full path coordinates
-                'start': path_coords[0],  # Start point
-                'end': path_coords[-1],   # End point
-                'length': len(path_coords) # Path length
-            }
+            # Convert sparse matrix path to dense array of indices
+            path_indices = path.toarray().flatten().nonzero()[0]
+            # Get coordinates for these indices
+            path_coords = coords[path_indices]
+            self.paths[i] = path_coords  # Store the coordinates array
         
-        self.stats = summarize(skeleton, separator="-")
+        # Get detailed statistics using skan's summarize function
+        self.stats = summarize(self.skeleton, separator="-")
         return self.paths, self.stats
 
     def get_depth_volume(self) -> np.ndarray:
