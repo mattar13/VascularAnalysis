@@ -1,21 +1,24 @@
 """
-VesselTracer Package
-
-This package provides tools for analyzing vascular structures in 3D image data,
-including preprocessing, segmentation, skeletonization, and analysis of vessel networks.
-
-Main Components:
-- VesselTracer: Main class for vessel analysis pipeline
-- plotting: Visualization utilities
+VesselTracer - A tool for analyzing and visualizing vascular networks in 3D microscopy data.
 """
 
-from .tracer import VesselTracer
-from .plotting import show_max_projection
+from .VesselTracer import VesselTracer
+from .plotting import (
+    plot_projections,
+    plot_mean_zprofile,
+    plot_path_projections,
+    plot_layer_analysis,
+    plot_vessel_analysis
+)
 
-__version__ = '0.1.0'
+__version__ = "0.1.0"
 __author__ = 'Matt'
 
 __all__ = [
     'VesselTracer',
-    'show_max_projection',
+    'plot_projections',
+    'plot_mean_zprofile',
+    'plot_path_projections',
+    'plot_layer_analysis',
+    'plot_vessel_analysis'
 ]
