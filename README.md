@@ -43,7 +43,7 @@ python runVesselTracing.py data/sample_vessels.czi
 ```bash
 # Clone the repository
 git clone https://github.com/mattar13/VascularAnalysis.git
-cd VesselTracer
+cd VascularAnalysis/src/VesselTracer
 
 # Install the package
 pip install -e .
