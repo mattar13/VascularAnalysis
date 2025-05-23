@@ -8,7 +8,7 @@ src_path = Path(__file__).parent.parent / 'src'
 sys.path.append(str(src_path))
 
 from VesselTracer.tracer import VesselTracer
-from VesselTracer.plotting import show_max_projection, plot_mean_zprofile, plot_projections
+from VesselTracer.plotting import plot_mean_zprofile, plot_projections
 
 def main():
     # Initialize VesselTracer with CZI file
