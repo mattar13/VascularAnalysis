@@ -10,6 +10,7 @@ from skan import Skeleton, summarize
 import yaml
 from typing import Optional, Dict, Any, Tuple, Union, List
 from scipy.signal import find_peaks, peak_widths
+import tifffile
 
 @dataclass
 class VesselTracer:
@@ -462,4 +463,66 @@ class VesselTracer:
             if hasattr(self, attr):
                 delattr(self, attr)
                 
-        print("ROI updated. Next pipeline step will use new parameters.") 
+        print("ROI updated. Next pipeline step will use new parameters.")
+
+    def save_volume(self, 
+                   output_dir: str,
+                   save_original: bool = True,
+                   save_smoothed: bool = True,
+                   save_binary: bool = True,
+                   save_separate: bool = False) -> None:
+        """Save volume data as .tif files.
+        
+        Args:
+            output_dir: Directory to save the .tif files
+            save_original: Whether to save the original ROI volume
+            save_smoothed: Whether to save the smoothed volume
+            save_binary: Whether to save the binary volume
+            save_separate: If True, saves each volume type as a separate file.
+                          If False, saves all volumes in a single multi-channel file.
+        """
+        # Create output directory if it doesn't exist
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Ensure we have the volumes we want to save
+        if not hasattr(self, 'roi_volume'):
+            self.segment_roi()
+        if save_smoothed and not hasattr(self, 'smoothed'):
+            self.smooth()
+        if save_binary and not hasattr(self, 'binary'):
+            self.binarize()
+            
+        # Prepare volumes for saving
+        volumes = []
+        volume_names = []
+        
+        if save_original:
+            volumes.append(self.roi_volume)
+            volume_names.append('original')
+        if save_smoothed:
+            volumes.append(self.smoothed)
+            volume_names.append('smoothed')
+        if save_binary:
+            volumes.append(self.binary.astype(np.uint8))  # Convert boolean to uint8
+            volume_names.append('binary')
+            
+        if not volumes:
+            print("No volumes selected for saving!")
+            return
+            
+        if save_separate:
+            # Save each volume as a separate file
+            for vol, name in zip(volumes, volume_names):
+                output_file = output_path / f"{name}_volume.tif"
+                print(f"Saving {name} volume to {output_file}")
+                tifffile.imwrite(str(output_file), vol)
+        else:
+            # Save all volumes in a single multi-channel file
+            # Stack volumes along a new channel dimension
+            stacked_volumes = np.stack(volumes, axis=0)
+            output_file = output_path / "all_volumes.tif"
+            print(f"Saving all volumes to {output_file}")
+            tifffile.imwrite(str(output_file), stacked_volumes)
+            
+        print("Volume saving complete!") 
