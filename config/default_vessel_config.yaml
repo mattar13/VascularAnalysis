@@ -1,6 +1,6 @@
 # Region of Interest (ROI) settings
 roi:
-  micron_roi: 200.0  # ROI size in microns
+  micron_roi: 2000.0  # ROI size in microns
   center_x: 1200     # X center coordinate
   center_y: 1250     # Y center coordinate
 

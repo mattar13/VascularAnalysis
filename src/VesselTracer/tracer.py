@@ -246,7 +246,7 @@ class VesselTracer:
         self.paths = {}
         coords = self.skeleton.coordinates
         for i, path in enumerate(self.skeleton.paths):
-            print(f"Path {i}: {path}")
+            print(f"Path {i}: in  {len(self.skeleton.paths)}")
             # Convert sparse matrix path to dense array of indices
             path_indices = path.toarray().flatten().nonzero()[0]
             # Get coordinates for these indices
