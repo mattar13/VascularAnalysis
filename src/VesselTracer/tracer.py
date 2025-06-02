@@ -3,9 +3,9 @@ from pathlib import Path
 import numpy as np
 import xmltodict
 from czifile import CziFile
-from scipy.ndimage import gaussian_filter
-from skimage.morphology import remove_small_objects, binary_closing, ball, skeletonize as sk_skeletonize
-from skimage.filters import threshold_otsu
+from scipy.ndimage import gaussian_filter, median_filter
+from skimage.morphology import remove_small_objects, binary_closing, binary_opening, ball, skeletonize as sk_skeletonize
+from skimage.filters import threshold_otsu, threshold_triangle
 from skan import Skeleton, summarize
 import yaml
 from typing import Optional, Dict, Any, Tuple, Union, List
@@ -53,7 +53,9 @@ class VesselTracer:
         self.min_object_size = config['preprocessing']['min_object_size']
         self.close_radius = config['preprocessing']['close_radius']
         self.prune_length = config['preprocessing']['prune_length']
-        
+        self.median_filter_size = config['preprocessing']['median_filter_size']
+        self.binarization_method = config['preprocessing']['binarization_method']
+
         # Region settings
         self.regions = config.get('regions', ['superficial', 'intermediate', 'deep'])
         self.region_peak_distance = config.get('region_peak_distance', 2)
@@ -61,7 +63,7 @@ class VesselTracer:
         self.region_n_stds = config.get('region_n_stds', 2)
         
         # Verbose settings
-        self.verbose = config.get('verbose', 1)  # Default to level 1
+        self.verbose = config.get('verbose', 2)  # Default to level 1
         
         # Image properties (set by load_image)
         self.pixel_size_x = 0.0
@@ -171,11 +173,24 @@ class VesselTracer:
         else:
             self.valid_frame_range = (0, roi.shape[0]-1)
         
-        self.roi_volume = roi
+        self.roi_volume = self._normalize_image(roi)
         self._log(f"ROI extraction complete. Final shape: {roi.shape}", level=2)
         self._log("ROI extraction complete", level=1, timing=time.time() - start_time)
         return roi
+    
+    def median_filter(self) -> np.ndarray:
+        """Apply median filter to ROI volume."""
+        start_time = time.time()
+        self._log("Applying median filter...", level=1)
         
+        if not hasattr(self, 'roi_volume'): 
+            self.segment_roi()
+            
+        self.roi_volume = median_filter(self.roi_volume, size=self.median_filter_size)
+        
+        self._log("Median filter complete", level=1, timing=time.time() - start_time)
+        return self.roi_volume
+    
     def detrend(self) -> np.ndarray:
         """Remove linear trend from ROI along z-axis.
         
@@ -236,10 +251,11 @@ class VesselTracer:
         return self.smoothed
         
     def binarize(self) -> np.ndarray:
-        """Binarize the smoothed volume using Otsu thresholding.
+        """Binarize the smoothed volume using triangle thresholding.
         
-        This method processes the volume slice by slice using a global threshold,
-        removes small objects, and performs 3D closing.
+        This method applies triangle thresholding to the entire 3D volume at once,
+        removes small objects, and performs morphological operations to clean up
+        the binary volume.
         
         Returns:
             np.ndarray: Binary volume after thresholding and cleaning
@@ -250,26 +266,29 @@ class VesselTracer:
         if not hasattr(self, 'smoothed'):
             self.smooth()
             
-        Z, Y, X = self.smoothed.shape
-        bw_vol = np.zeros((Z, Y, X), dtype=bool)
+        # Calculate triangle threshold using entire volume
+        thresh = threshold_triangle(self.smoothed.ravel())
+        self._log(f"Triangle threshold: {thresh:.3f}", level=2)
         
-        # Calculate global threshold using all slices
-        thresh = threshold_otsu(self.smoothed.ravel())
-        self._log(f"Global Otsu threshold: {thresh:.3f}", level=2)
+        # Apply threshold to entire volume at once
+        bw_vol = self.smoothed > thresh
         
-        # Process each slice
-        for z in range(Z):
-            img = self.smoothed[z]
-            bw = img > thresh
-            
-            # Remove small objects
-            bw_removed = remove_small_objects(bw, min_size=self.min_object_size)
-            bw_vol[z] = bw_removed
-            
-        # 3D closing
+        # Remove small objects in 3D
+        bw_vol = remove_small_objects(bw_vol, min_size=self.min_object_size)
+        
+        # Apply morphological operations
         if self.close_radius > 0:
+            # # First do opening to remove small noise spots
+            # self._log(f"Performing 3D opening with radius {self.close_radius}", level=2)
+            # bw_vol = binary_opening(bw_vol, ball(self.close_radius))
+            
+            # Then do closing to connect nearby vessel segments
             self._log(f"Performing 3D closing with radius {self.close_radius}", level=2)
             bw_vol = binary_closing(bw_vol, ball(self.close_radius))
+            
+            # # Do one more opening to clean up any remaining noise
+            # self._log(f"Performing final 3D opening with radius {self.close_radius}", level=2)
+            # bw_vol = binary_opening(bw_vol, ball(self.close_radius))
             
         self.binary = bw_vol
         self._log("Binarization complete", level=1, timing=time.time() - start_time)
@@ -300,13 +319,15 @@ class VesselTracer:
         # Extract paths from skeleton
         self.paths = {}
         coords = self.skeleton.coordinates
-        for i, path in enumerate(self.skeleton.paths):
-            self._log(f"Path {i}: {len(self.skeleton.paths)}", level=2)
-            # Convert sparse matrix path to dense array of indices
-            path_indices = path.toarray().flatten().nonzero()[0]
-            # Get coordinates for these indices
-            path_coords = coords[path_indices]
-            self.paths[i] = path_coords  # Store the coordinates array
+        total_paths = self.skeleton.paths.shape[0]
+        #This is a very slow operation, lets see what we get until then
+        # for i, path in enumerate(self.skeleton.paths):
+        #     self._log(f"Processing path {i+1} out of {total_paths}", level=2)
+        #     # Convert sparse matrix path to dense array of indices
+        #     path_indices = path.toarray().flatten().nonzero()[0]
+        #     # Get coordinates for these indices
+        #     path_coords = coords[path_indices]
+        #     self.paths[i] = path_coords  # Store the coordinates array
         
         # Get detailed statistics using skan's summarize function
         self.stats = summarize(self.skeleton, separator="-")
@@ -409,7 +430,7 @@ class VesselTracer:
         
         # Print peak information
         for i, pk in enumerate(peaks):
-            print(f"Peak at z={pk:.1f}: σ ≈ {sigmas[i]:.2f}")
+            self._log(f"Peak at z={pk:.1f}: σ ≈ {sigmas[i]:.2f}")
         
         # Create region bounds dictionary
         self.region_bounds = {
