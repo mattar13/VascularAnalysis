@@ -55,6 +55,7 @@ class VesselTracer:
         self.prune_length = config['preprocessing']['prune_length']
         self.median_filter_size = config['preprocessing']['median_filter_size']
         self.binarization_method = config['preprocessing']['binarization_method']
+        self.super_smooth_sigma = config['preprocessing']['super_smooth_sigma']
 
         # Region settings
         self.regions = config.get('regions', ['superficial', 'intermediate', 'deep'])
