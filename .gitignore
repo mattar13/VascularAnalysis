@@ -1,4 +1,5 @@
 test/test_files/
+test/results/
 __pycache__/
 /src/VascularAnalysis.egg-info/
 /VascularAnalysis.egg-info/
