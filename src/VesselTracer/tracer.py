@@ -192,6 +192,16 @@ class VesselTracer:
         self._log("Median filter complete", level=1, timing=time.time() - start_time)
         return self.roi_volume
     
+    def background_smoothing(self, epsilon = 1e-6) -> np.ndarray:
+        """Apply super smoothing to ROI volume."""
+        start_time = time.time()
+        self._log("Super smoothing volume...", level=1)
+                    
+        background_smooth = gaussian_filter(self.roi_volume, sigma=self.super_smooth_sigma)
+        
+        self._log("Super smoothing complete", level=1, timing=time.time() - start_time)
+        self.roi_volume = (self.roi_volume - background_smooth) / (epsilon + background_smooth)
+    
     def detrend(self) -> np.ndarray:
         """Remove linear trend from ROI along z-axis.
         
@@ -237,15 +247,6 @@ class VesselTracer:
         self._log("Detrending complete", level=1, timing=time.time() - start_time)
         return self.roi_volume
     
-    def background_smoothing(self, epsilon = 1e-6) -> np.ndarray:
-        """Apply super smoothing to ROI volume."""
-        start_time = time.time()
-        self._log("Super smoothing volume...", level=1)
-                    
-        background_smooth = gaussian_filter(self.roi_volume, sigma=self.super_smooth_sigma)
-        
-        self._log("Super smoothing complete", level=1, timing=time.time() - start_time)
-        self.roi_volume = (self.roi_volume - background_smooth) / (epsilon + background_smooth)
         
     def smooth(self) -> np.ndarray:
         """Apply Gaussian smoothing to ROI volume."""
