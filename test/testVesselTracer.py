@@ -13,8 +13,8 @@ def run_analysis(input_path, output_dir=None):
         raise FileNotFoundError(f"Input file not found: {input_path}")
     
     # Setup output directory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = Path(f"results_{input_path.stem}_{timestamp}")
+    timestamp = datetime.now().strftime("%Y%m%d")
+    output_dir = Path(f"test\\results\\{input_path.stem}_{timestamp}")
     
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -28,18 +28,19 @@ def run_analysis(input_path, output_dir=None):
         # Run analysis pipeline
         print("Running analysis pipeline...")
         tracer.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
+        tracer.median_filter()
         tracer.detrend()
         tracer.smooth()
         tracer.binarize()
-        tracer.skeletonize()
+        # tracer.skeletonize()
         
-        print("Detecting regions...")
-        regions = tracer.determine_regions()
-        for region, (peak, sigma, bounds) in regions.items():
-            print(f"\n{region}:")
-            print(f"  Peak position: {peak:.1f}")
-            print(f"  Width (sigma): {sigma:.1f}")
-            print(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}")
+        # print("Detecting regions...")
+        # regions = tracer.determine_regions()
+        # for region, (peak, sigma, bounds) in regions.items():
+        #     print(f"\n{region}:")
+        #     print(f"  Peak position: {peak:.1f}")
+        #     print(f"  Width (sigma): {sigma:.1f}")
+        #     print(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}")
         
         # Save visualizations
         print("Generating visualizations...")
@@ -118,9 +119,11 @@ def run_analysis(input_path, output_dir=None):
             if hasattr(tracer, 'paths'):
                 # Get coordinates of vessel paths with their labels
                 vessel_paths_df = pd.DataFrame()
-                
+                print(f"Paths: {tracer.paths}")
                 # Process each path
                 for path_id, path_coords in tracer.paths.items():
+                    #do we even have any paths? 
+                    print(f"Path {path_id} has {len(path_coords)} points")
                     # Convert path coordinates to DataFrame
                     path_df = pd.DataFrame({
                         'Path_ID': path_id,
