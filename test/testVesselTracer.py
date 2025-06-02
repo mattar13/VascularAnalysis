@@ -29,6 +29,7 @@ def run_analysis(input_path, output_dir=None):
         print("Running analysis pipeline...")
         tracer.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
         tracer.median_filter()
+        tracer.background_smoothing()
         tracer.detrend()
         tracer.smooth()
         tracer.binarize()
