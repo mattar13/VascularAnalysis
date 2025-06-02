@@ -10,6 +10,9 @@ from skan import Skeleton, summarize
 import yaml
 from typing import Optional, Dict, Any, Tuple, Union, List
 from scipy.signal import find_peaks, peak_widths
+import tifffile
+import time
+from datetime import datetime
 
 @dataclass
 class VesselTracer:
@@ -57,13 +60,33 @@ class VesselTracer:
         self.region_height_ratio = config.get('region_height_ratio', 0.80)
         self.region_n_stds = config.get('region_n_stds', 2)
         
+        # Verbose settings
+        self.verbose = config.get('verbose', 1)  # Default to level 1
+        
         # Image properties (set by load_image)
         self.pixel_size_x = 0.0
         self.pixel_size_y = 0.0
         self.pixel_size_z = 0.0
         
+    def _log(self, message: str, level: int = 1, timing: Optional[float] = None):
+        """Log a message with appropriate verbosity level.
+        
+        Args:
+            message: Message to log
+            level: Minimum verbosity level required to show message (1-3)
+            timing: Optional timing information to include
+        """
+        if self.verbose >= level:
+            if timing is not None and self.verbose >= 3:
+                print(f"{message} (took {timing:.2f}s)")
+            else:
+                print(message)
+
     def _load_image(self):
         """Load CZI file and extract pixel sizes."""
+        start_time = time.time()
+        self._log("Loading CZI file...", level=1)
+        
         with CziFile(self.czi_path) as czi:
             self.volume = czi.asarray()[0, 0, 0, 0, ::-1, :, :, 0]
             meta = xmltodict.parse(czi.metadata())
@@ -81,6 +104,10 @@ class VesselTracer:
         
         # Normalize volume
         self.volume = self._normalize_image(self.volume.astype("float32"))
+        
+        self._log(f"Image loaded. Shape: {self.volume.shape}", level=2)
+        self._log(f"Pixel sizes (µm): X={self.pixel_size_x:.3f}, Y={self.pixel_size_y:.3f}, Z={self.pixel_size_z:.3f}", level=2)
+        self._log("Image loading complete", level=1, timing=time.time() - start_time)
         
     def _normalize_image(self, img: np.ndarray) -> np.ndarray:
         """Normalize image to [0,1] range."""
@@ -101,9 +128,14 @@ class VesselTracer:
         Returns:
             np.ndarray: ROI volume extracted from main volume
         """
+        start_time = time.time()
+        self._log("Extracting ROI...", level=1)
+        
         # Convert ROI size from microns to pixels
         h_x = round(self.micron_roi/2 * 1/self.pixel_size_x)
         h_y = round(self.micron_roi/2 * 1/self.pixel_size_y)
+        
+        self._log(f"ROI size: {h_x*2}x{h_y*2} pixels", level=2)
         
         # Extract initial ROI
         roi = self.volume[:, 
@@ -111,6 +143,7 @@ class VesselTracer:
                         self.center_x-h_x:self.center_x+h_x]
         
         if remove_dead_frames:
+            self._log("Removing dead frames...", level=2)
             # Calculate mean intensity profile along z
             z_profile = np.mean(roi, axis=(1,2))
             
@@ -122,11 +155,10 @@ class VesselTracer:
                 frame_start = valid_frames[0]
                 frame_end = valid_frames[-1]
                 
-                print(f"Removing dead frames:")
-                print(f"  Original z-range: 0-{len(z_profile)}")
-                print(f"  Valid frame range: {frame_start}-{frame_end}")
-                print(f"  Removed {frame_start} frames from start")
-                print(f"  Removed {len(z_profile)-frame_end-1} frames from end")
+                self._log(f"Original z-range: 0-{len(z_profile)}", level=2)
+                self._log(f"Valid frame range: {frame_start}-{frame_end}", level=2)
+                self._log(f"Removed {frame_start} frames from start", level=2)
+                self._log(f"Removed {len(z_profile)-frame_end-1} frames from end", level=2)
                 
                 # Update ROI to exclude dead frames
                 roi = roi[frame_start:frame_end+1]
@@ -134,12 +166,14 @@ class VesselTracer:
                 # Store frame range for reference
                 self.valid_frame_range = (frame_start, frame_end)
             else:
-                print("Warning: No frames found above threshold!")
+                self._log("Warning: No frames found above threshold!", level=1)
                 self.valid_frame_range = (0, len(z_profile)-1)
         else:
             self.valid_frame_range = (0, roi.shape[0]-1)
         
         self.roi_volume = roi
+        self._log(f"ROI extraction complete. Final shape: {roi.shape}", level=2)
+        self._log("ROI extraction complete", level=1, timing=time.time() - start_time)
         return roi
         
     def detrend(self) -> np.ndarray:
@@ -155,6 +189,9 @@ class VesselTracer:
         Returns:
             np.ndarray: Detrended ROI volume
         """
+        start_time = time.time()
+        self._log("Detrending volume...", level=1)
+        
         if not hasattr(self, 'roi_volume'):
             self.segment_roi()
             
@@ -168,6 +205,8 @@ class VesselTracer:
         coeffs = np.polyfit(z_positions, z_profile, deg=1)
         trend = np.polyval(coeffs, z_positions)
         
+        self._log(f"Linear trend coefficients: {coeffs}", level=2)
+        
         # Calculate correction factors
         correction = trend / np.mean(trend)
         
@@ -179,13 +218,21 @@ class VesselTracer:
         # Normalize to [0,1] range
         self.roi_volume = self._normalize_image(detrended)
         
+        self._log("Detrending complete", level=1, timing=time.time() - start_time)
         return self.roi_volume
     
     def smooth(self) -> np.ndarray:
         """Apply Gaussian smoothing to ROI volume."""
+        start_time = time.time()
+        self._log("Smoothing volume...", level=1)
+        
         if not hasattr(self, 'roi_volume'):
             self.detrend()
+            
+        self._log(f"Using Gaussian sigma: {self.gauss_sigma}", level=2)
         self.smoothed = gaussian_filter(self.roi_volume, sigma=self.gauss_sigma)
+        
+        self._log("Smoothing complete", level=1, timing=time.time() - start_time)
         return self.smoothed
         
     def binarize(self) -> np.ndarray:
@@ -197,6 +244,9 @@ class VesselTracer:
         Returns:
             np.ndarray: Binary volume after thresholding and cleaning
         """
+        start_time = time.time()
+        self._log("Binarizing volume...", level=1)
+        
         if not hasattr(self, 'smoothed'):
             self.smooth()
             
@@ -205,7 +255,7 @@ class VesselTracer:
         
         # Calculate global threshold using all slices
         thresh = threshold_otsu(self.smoothed.ravel())
-        print(f"Global Otsu threshold: {thresh:.3f}")
+        self._log(f"Global Otsu threshold: {thresh:.3f}", level=2)
         
         # Process each slice
         for z in range(Z):
@@ -218,9 +268,11 @@ class VesselTracer:
             
         # 3D closing
         if self.close_radius > 0:
+            self._log(f"Performing 3D closing with radius {self.close_radius}", level=2)
             bw_vol = binary_closing(bw_vol, ball(self.close_radius))
             
         self.binary = bw_vol
+        self._log("Binarization complete", level=1, timing=time.time() - start_time)
         return bw_vol
         
     def skeletonize(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -231,22 +283,25 @@ class VesselTracer:
             - paths: Dictionary of branch paths with coordinates
             - stats: DataFrame with branch statistics
         """
+        start_time = time.time()
+        self._log("Skeletonizing volume...", level=1)
+        
         if not hasattr(self, 'binary'):
             self.binarize()
             
-        print(f"Skeletonizing binary volume of shape {self.binary.shape}")
+        self._log(f"Skeletonizing binary volume of shape {self.binary.shape}", level=2)
         ske = sk_skeletonize(self.binary)
-        print(f"Skeletonized volume of shape {ske.shape}")
+        self._log(f"Skeletonized volume of shape {ske.shape}", level=2)
         
         # Create Skeleton object for path analysis
         self.skeleton = Skeleton(ske)
-        print(f"Created skeleton object")
+        self._log("Created skeleton object", level=2)
         
         # Extract paths from skeleton
         self.paths = {}
         coords = self.skeleton.coordinates
         for i, path in enumerate(self.skeleton.paths):
-            print(f"Path {i}: in  {len(self.skeleton.paths)}")
+            self._log(f"Path {i}: {len(self.skeleton.paths)}", level=2)
             # Convert sparse matrix path to dense array of indices
             path_indices = path.toarray().flatten().nonzero()[0]
             # Get coordinates for these indices
@@ -255,6 +310,9 @@ class VesselTracer:
         
         # Get detailed statistics using skan's summarize function
         self.stats = summarize(self.skeleton, separator="-")
+        
+        self._log(f"Found {len(self.paths)} vessel paths", level=2)
+        self._log("Skeletonization complete", level=1, timing=time.time() - start_time)
         return self.paths, self.stats
 
     def get_depth_volume(self) -> np.ndarray:
@@ -403,38 +461,265 @@ class VesselTracer:
         print(f"    pixel_size_y     -> {self.pixel_size_y:8.3f} [Pixel size in y direction (µm/pixel)]")
         print(f"    pixel_size_z     -> {self.pixel_size_z:8.3f} [Pixel size in z direction (µm/pixel)]")
         print("\n")
+
+    def run_analysis(self,
+                    skip_smoothing: bool = False,
+                    skip_binarization: bool = False,
+                    skip_regions: bool = False) -> None:
+        """Run the analysis pipeline without saving any outputs.
         
-    def run_pipeline(self) -> None:
-        """Run the complete vessel analysis pipeline.
-        
-        This executes all analysis steps in sequence:
+        This executes all analysis steps in sequence but skips visualization and saving:
         1. Extract ROI
-        2. Smooth volume
-        3. Binarize vessels
+        2. Smooth volume (optional)
+        3. Binarize vessels (optional)
         4. Create skeleton
-        5. Determine regions
-        6. Analyze layers
+        5. Determine regions (optional)
+        
+        Args:
+            skip_smoothing: Whether to skip the smoothing step
+            skip_binarization: Whether to skip the binarization step
+            skip_regions: Whether to skip the region detection step
         """
-        print("\nRunning vessel analysis pipeline...")
-        print("1. Extracting ROI...")
-        self.segment_roi()
+        start_time = time.time()
+        self._log("Starting analysis pipeline...", level=1)
         
-        print("2. Smoothing volume...")
-        self.smooth()
+        try:
+            # Extract ROI
+            self._log("1. Extracting ROI...", level=1)
+            self.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
+            self.detrend()
+            
+            # Smooth volume
+            if not skip_smoothing:
+                self._log("2. Smoothing volume...", level=1)
+                self.smooth()
+            
+            # Binarize vessels
+            if not skip_binarization:
+                self._log("3. Binarizing vessels...", level=1)
+                self.binarize()
+            
+            # Create skeleton
+            self._log("4. Creating skeleton...", level=1)
+            self.skeletonize()
+            
+            # Determine regions
+            if not skip_regions:
+                self._log("5. Determining regions...", level=1)
+                regions = self.determine_regions()
+                for region, (peak, sigma, bounds) in regions.items():
+                    self._log(f"\n{region}:", level=2)
+                    self._log(f"  Peak position: {peak:.1f}", level=2)
+                    self._log(f"  Width (sigma): {sigma:.1f}", level=2)
+                    self._log(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}", level=2)
+            
+            self._log("Analysis complete", level=1, timing=time.time() - start_time)
+            
+        except Exception as e:
+            self._log(f"Error in analysis pipeline: {str(e)}", level=1)
+            raise 
+      
+    def run_pipeline(self, 
+                    output_dir: Optional[str] = None,
+                    skip_smoothing: bool = False,
+                    skip_binarization: bool = False,
+                    skip_regions: bool = False) -> None:
+        """Run the complete vessel analysis pipeline with visualization and data saving.
         
-        print("3. Binarizing vessels...")
-        self.binarize()
+        This executes all analysis steps in sequence and saves results:
+        1. Extract ROI
+        2. Smooth volume (optional)
+        3. Binarize vessels (optional)
+        4. Create skeleton
+        5. Determine regions (optional)
+        6. Generate visualizations
+        7. Save analysis results
         
-        print("4. Creating skeleton...")
-        self.skeletonize()
+        Args:
+            output_dir: Directory to save results. If None, creates timestamped directory.
+            skip_smoothing: Whether to skip the smoothing step
+            skip_binarization: Whether to skip the binarization step
+            skip_regions: Whether to skip the region detection step
+        """
+        from datetime import datetime
+        import matplotlib.pyplot as plt
+        import pandas as pd
+        from .plotting import plot_projections, plot_mean_zprofile, plot_path_projections
         
-        print("5. Determining regions...")
-        self.determine_regions()
+        start_time = time.time()
+        self._log("Starting pipeline with visualization and saving...", level=1)
         
-        print("6. Analyzing layers...")
-        self.analyze_layers()
+        # Setup output directory
+        if output_dir:
+            output_path = Path(output_dir)
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_path = Path(f"results_{Path(self.czi_path).stem}_{timestamp}")
         
-        print("Pipeline complete!\n")
+        output_path.mkdir(parents=True, exist_ok=True)
+        self._log(f"Results will be saved to: {output_path}", level=1)
+        
+        try:
+            # Run the analysis steps
+            self.run_analysis(
+                skip_smoothing=skip_smoothing,
+                skip_binarization=skip_binarization,
+                skip_regions=skip_regions
+            )
+            
+            # Save visualizations
+            self._log("Generating visualizations...", level=1)
+            
+            # Projections
+            self._log("Creating smoothed projections...", level=2)
+            fig1, axes1 = plot_projections(self, mode='smoothed')
+            fig1.savefig(output_path / 'projections_smoothed.png', dpi=300, bbox_inches='tight')
+            plt.close(fig1)
+            
+            self._log("Creating binary projections...", level=2)
+            fig2, axes2 = plot_projections(self, mode='binary')
+            fig2.savefig(output_path / 'projections_binary.png', dpi=300, bbox_inches='tight')
+            plt.close(fig2)
+            
+            self._log("Creating depth-coded projections...", level=2)
+            fig3, axes3 = plot_projections(self, mode='binary', depth_coded=True)
+            fig3.savefig(output_path / 'projections_depth.png', dpi=300, bbox_inches='tight')
+            plt.close(fig3)
+            
+            # Z-profile
+            self._log("Creating vessel distribution plot...", level=2)
+            fig4, axes4 = plot_mean_zprofile(self)
+            fig4.savefig(output_path / 'vessel_distribution.png', dpi=300, bbox_inches='tight')
+            plt.close(fig4)
+            
+            # Path projections
+            if hasattr(self, 'paths'):
+                self._log("Creating path projections...", level=2)
+                fig5, axes5 = plot_path_projections(self)
+                fig5.savefig(output_path / 'path_projections.png', dpi=300, bbox_inches='tight')
+                plt.close(fig5)
+            
+            # Save analysis results
+            self._log("Saving analysis results...", level=1)
+            
+            # Create Excel writer
+            excel_path = output_path / 'analysis_results.xlsx'
+            with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+                # Save metadata
+                self._log("Saving metadata...", level=2)
+                metadata = pd.DataFrame({
+                    'Parameter': ['Input File', 'Timestamp', 'Config Used', 
+                                'Smoothing Applied', 'Binarization Applied', 
+                                'Region Detection Applied'],
+                    'Value': [
+                        str(self.czi_path),
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        str(self.config_path) if self.config_path else 'Default',
+                        not skip_smoothing,
+                        not skip_binarization,
+                        not skip_regions
+                    ]
+                })
+                metadata.to_excel(writer, sheet_name='Metadata', index=False)
+                
+                # Save region bounds if available
+                if hasattr(self, 'region_bounds'):
+                    self._log("Saving region analysis...", level=2)
+                    region_data = []
+                    for region, (peak, sigma, bounds) in self.region_bounds.items():
+                        region_data.append({
+                            'Region': region,
+                            'Peak Position': peak,
+                            'Sigma': sigma,
+                            'Lower Bound': bounds[0],
+                            'Upper Bound': bounds[1]
+                        })
+                    regions_df = pd.DataFrame(region_data)
+                    regions_df.to_excel(writer, sheet_name='Region Analysis', index=False)
+                
+                # Save mean z-profile
+                self._log("Saving z-profile data...", level=2)
+                z_profile = self.get_projection([1, 2], operation='mean')
+                z_profile_df = pd.DataFrame({
+                    'Z Position': np.arange(len(z_profile)),
+                    'Mean Intensity': z_profile
+                })
+                z_profile_df.to_excel(writer, sheet_name='Z Profile', index=False)
+                
+                # Save vessel paths
+                if hasattr(self, 'paths'):
+                    self._log("Extracting and saving vessel paths...", level=2)
+                    # Get coordinates of vessel paths with their labels
+                    vessel_paths_df = pd.DataFrame()
+                    
+                    # Process each path
+                    for path_id, path_coords in self.paths.items():
+                        # Convert path coordinates to DataFrame
+                        path_df = pd.DataFrame({
+                            'Path_ID': path_id,
+                            'X': path_coords[:, 2],  # Note: CZI files are typically ZYX order
+                            'Y': path_coords[:, 1],
+                            'Z': path_coords[:, 0]
+                        })
+                        vessel_paths_df = pd.concat([vessel_paths_df, path_df], ignore_index=True)
+                    
+                    # Sort by Path_ID, then Z, Y, X for better organization
+                    vessel_paths_df = vessel_paths_df.sort_values(['Path_ID', 'Z', 'Y', 'X'])
+                    
+                    # Save to Excel
+                    vessel_paths_df.to_excel(writer, sheet_name='Vessel Paths', index=False)
+                    
+                    # Add summary statistics
+                    self._log("Calculating path statistics...", level=2)
+                    path_stats = pd.DataFrame({
+                        'Metric': ['Total Points', 'Number of Paths', 'Unique X', 'Unique Y', 'Unique Z', 
+                                 'Min X', 'Max X', 'Min Y', 'Max Y', 'Min Z', 'Max Z'],
+                        'Value': [
+                            len(vessel_paths_df),
+                            len(self.paths),
+                            vessel_paths_df['X'].nunique(),
+                            vessel_paths_df['Y'].nunique(),
+                            vessel_paths_df['Z'].nunique(),
+                            vessel_paths_df['X'].min(),
+                            vessel_paths_df['X'].max(),
+                            vessel_paths_df['Y'].min(),
+                            vessel_paths_df['Y'].max(),
+                            vessel_paths_df['Z'].min(),
+                            vessel_paths_df['Z'].max()
+                        ]
+                    })
+                    path_stats.to_excel(writer, sheet_name='Path Statistics', index=False)
+                    
+                    # Add per-path statistics
+                    self._log("Calculating per-path statistics...", level=2)
+                    path_details = []
+                    for path_id, path_coords in self.paths.items():
+                        path_data = vessel_paths_df[vessel_paths_df['Path_ID'] == path_id]
+                        path_details.append({
+                            'Path_ID': path_id,
+                            'Number_of_Points': len(path_data),
+                            'Z_Range': path_data['Z'].max() - path_data['Z'].min(),
+                            'Y_Range': path_data['Y'].max() - path_data['Y'].min(),
+                            'X_Range': path_data['X'].max() - path_data['X'].min(),
+                            'Min_Z': path_data['Z'].min(),
+                            'Max_Z': path_data['Z'].max(),
+                            'Min_Y': path_data['Y'].min(),
+                            'Max_Y': path_data['Y'].max(),
+                            'Min_X': path_data['X'].min(),
+                            'Max_X': path_data['X'].max()
+                        })
+                    
+                    path_details_df = pd.DataFrame(path_details)
+                    path_details_df.to_excel(writer, sheet_name='Path Details', index=False)
+            
+            self._log(f"Analysis complete! Results saved to: {output_path}", level=1, timing=time.time() - start_time)
+            
+        except Exception as e:
+            self._log(f"Error in analysis pipeline: {str(e)}", level=1)
+            # Save error log
+            with open(output_path / 'error_log.txt', 'w') as f:
+                f.write(f"Error in analysis pipeline:\n{str(e)}")
+            raise
         
     def update_roi_position(self, center_x: int, center_y: int, micron_roi: Optional[float] = None) -> None:
         """Update the ROI center position and optionally its size.
@@ -462,4 +747,66 @@ class VesselTracer:
             if hasattr(self, attr):
                 delattr(self, attr)
                 
-        print("ROI updated. Next pipeline step will use new parameters.") 
+        print("ROI updated. Next pipeline step will use new parameters.")
+
+    def save_volume(self, 
+                   output_dir: str,
+                   save_original: bool = True,
+                   save_smoothed: bool = True,
+                   save_binary: bool = True,
+                   save_separate: bool = False) -> None:
+        """Save volume data as .tif files.
+        
+        Args:
+            output_dir: Directory to save the .tif files
+            save_original: Whether to save the original ROI volume
+            save_smoothed: Whether to save the smoothed volume
+            save_binary: Whether to save the binary volume
+            save_separate: If True, saves each volume type as a separate file.
+                          If False, saves all volumes in a single multi-channel file.
+        """
+        # Create output directory if it doesn't exist
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Ensure we have the volumes we want to save
+        if not hasattr(self, 'roi_volume'):
+            self.segment_roi()
+        if save_smoothed and not hasattr(self, 'smoothed'):
+            self.smooth()
+        if save_binary and not hasattr(self, 'binary'):
+            self.binarize()
+            
+        # Prepare volumes for saving
+        volumes = []
+        volume_names = []
+        
+        if save_original:
+            volumes.append(self.roi_volume)
+            volume_names.append('original')
+        if save_smoothed:
+            volumes.append(self.smoothed)
+            volume_names.append('smoothed')
+        if save_binary:
+            volumes.append(self.binary.astype(np.uint8))  # Convert boolean to uint8
+            volume_names.append('binary')
+            
+        if not volumes:
+            print("No volumes selected for saving!")
+            return
+            
+        if save_separate:
+            # Save each volume as a separate file
+            for vol, name in zip(volumes, volume_names):
+                output_file = output_path / f"{name}_volume.tif"
+                print(f"Saving {name} volume to {output_file}")
+                tifffile.imwrite(str(output_file), vol)
+        else:
+            # Save all volumes in a single multi-channel file
+            # Stack volumes along a new channel dimension
+            stacked_volumes = np.stack(volumes, axis=0)
+            output_file = output_path / "all_volumes.tif"
+            print(f"Saving all volumes to {output_file}")
+            tifffile.imwrite(str(output_file), stacked_volumes)
+            
+        print("Volume saving complete!")
