@@ -18,3 +18,4 @@ preprocessing:
   prune_length: 5         # Length to prune skeleton branches
   binarization_method: "triangle"  # "triangle" or "otsu"
   median_filter_size: 3   # Size of median filter to apply before binarization
+  super_smooth_sigma: 50.0  # Sigma for super smoothing
