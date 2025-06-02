@@ -48,15 +48,25 @@ class VesselTracer:
         self.scalebar_x = config['scalebar']['x']
         self.scalebar_y = config['scalebar']['y']
         
-        # Pre-processing settings
-        self.gauss_sigma = config['preprocessing']['gauss_sigma']
+        # Store micron values for reference
+        self.micron_gauss_sigma = config['preprocessing']['gauss_sigma']
+        self.micron_background_sigma = config['preprocessing']['background_sigma']
+        self.micron_median_filter_size = config['preprocessing']['median_filter_size']
+        self.micron_close_radius = config['preprocessing']['close_radius']
+        
+        # Pre-processing settings (will be converted to pixels after loading image)
+        self.gauss_sigma_x = None  # Will be set in _convert_to_pixels
+        self.gauss_sigma_y = None  # Will be set in _convert_to_pixels
+        self.gauss_sigma_z = None  # Will be set in _convert_to_pixels
+        self.background_sigma_x = None  # Will be set in _convert_to_pixels
+        self.background_sigma_y = None  # Will be set in _convert_to_pixels
+        self.background_sigma_z = None  # Will be set in _convert_to_pixels
+        self.median_filter_size = None  # Will be set in _convert_to_pixels
+        self.close_radius = None  # Will be set in _convert_to_pixels
         self.min_object_size = config['preprocessing']['min_object_size']
-        self.close_radius = config['preprocessing']['close_radius']
         self.prune_length = config['preprocessing']['prune_length']
-        self.median_filter_size = config['preprocessing']['median_filter_size']
         self.binarization_method = config['preprocessing']['binarization_method']
-        self.super_smooth_sigma = config['preprocessing']['super_smooth_sigma']
-
+        
         # Region settings
         self.regions = config.get('regions', ['superficial', 'intermediate', 'deep'])
         self.region_peak_distance = config.get('region_peak_distance', 2)
@@ -71,6 +81,47 @@ class VesselTracer:
         self.pixel_size_y = 0.0
         self.pixel_size_z = 0.0
         
+    def _convert_to_pixels(self):
+        """Convert micron-based parameters to pixel values using image resolution."""
+        if self.pixel_size_x == 0 or self.pixel_size_y == 0 or self.pixel_size_z == 0:
+            raise ValueError("Pixel sizes not set. Call _load_image first.")
+            
+        # Convert Gaussian sigma for each dimension (for regular smoothing)
+        self.gauss_sigma_x = self.micron_gauss_sigma / self.pixel_size_x
+        self.gauss_sigma_y = self.micron_gauss_sigma / self.pixel_size_y
+        self.gauss_sigma_z = self.micron_gauss_sigma / self.pixel_size_z
+        self.gauss_sigma = (self.gauss_sigma_z, self.gauss_sigma_y, self.gauss_sigma_x)
+        
+        # Convert background smoothing sigma for each dimension
+        self.background_sigma_x = self.micron_background_sigma / self.pixel_size_x
+        self.background_sigma_y = self.micron_background_sigma / self.pixel_size_y
+        self.background_sigma_z = self.micron_background_sigma / self.pixel_size_z
+        self.background_sigma = (self.background_sigma_z, self.background_sigma_y, self.background_sigma_x)
+        
+        # Convert median filter size (use average of x and y pixel sizes)
+        avg_xy_pixel_size = (self.pixel_size_x + self.pixel_size_y) / 2
+        self.median_filter_size = int(round(self.micron_median_filter_size / avg_xy_pixel_size))
+        # Ensure odd size for median filter
+        if self.median_filter_size % 2 == 0:
+            self.median_filter_size += 1
+            
+        # Convert closing radius (use average of x and y pixel sizes)
+        self.close_radius = int(round(self.micron_close_radius / avg_xy_pixel_size))
+        
+        self._log(f"Converted parameters to pixels:", level=2)
+        self._log(f"  Regular smoothing sigma (µm): {self.micron_gauss_sigma:.1f}", level=2)
+        self._log(f"  Regular smoothing sigma (pixels):", level=2)
+        self._log(f"    X: {self.gauss_sigma_x:.1f}", level=2)
+        self._log(f"    Y: {self.gauss_sigma_y:.1f}", level=2)
+        self._log(f"    Z: {self.gauss_sigma_z:.1f}", level=2)
+        self._log(f"  Background smoothing sigma (µm): {self.micron_background_sigma:.1f}", level=2)
+        self._log(f"  Background smoothing sigma (pixels):", level=2)
+        self._log(f"    X: {self.background_sigma_x:.1f}", level=2)
+        self._log(f"    Y: {self.background_sigma_y:.1f}", level=2)
+        self._log(f"    Z: {self.background_sigma_z:.1f}", level=2)
+        self._log(f"  Median filter size: {self.micron_median_filter_size:.1f} µm -> {self.median_filter_size} pixels", level=2)
+        self._log(f"  Closing radius: {self.micron_close_radius:.1f} µm -> {self.close_radius} pixels", level=2)
+
     def _log(self, message: str, level: int = 1, timing: Optional[float] = None):
         """Log a message with appropriate verbosity level.
         
@@ -104,6 +155,9 @@ class VesselTracer:
         self.pixel_size_x = _px_um("X")
         self.pixel_size_y = _px_um("Y")
         self.pixel_size_z = _px_um("Z")
+        
+        # Convert micron parameters to pixels
+        self._convert_to_pixels()
         
         # Normalize volume
         self.volume = self._normalize_image(self.volume.astype("float32"))
@@ -192,16 +246,30 @@ class VesselTracer:
         self._log("Median filter complete", level=1, timing=time.time() - start_time)
         return self.roi_volume
     
-    def background_smoothing(self, epsilon = 1e-6) -> np.ndarray:
-        """Apply super smoothing to ROI volume."""
-        start_time = time.time()
-        self._log("Super smoothing volume...", level=1)
-                    
-        background_smooth = gaussian_filter(self.roi_volume, sigma=self.super_smooth_sigma)
+    def background_smoothing(self, epsilon = 1e-6, mode = 'gaussian') -> np.ndarray:
+        """Apply background smoothing to ROI volume with proper handling of anisotropic voxels.
         
-        self._log("Super smoothing complete", level=1, timing=time.time() - start_time)
-        self.roi_volume = (self.roi_volume - background_smooth) / (epsilon + background_smooth)
-    
+        This is used to estimate and remove the background intensity variation.
+        Uses a larger smoothing kernel than regular smoothing.
+        """
+        start_time = time.time()
+        self._log(f"Applying background smoothing with {mode}...", level=1)
+        self._log(f"Using background sigma (pixels):", level=2)
+        self._log(f"  X: {self.background_sigma_x:.1f}", level=2)
+        self._log(f"  Y: {self.background_sigma_y:.1f}", level=2)
+        self._log(f"  Z: {self.background_sigma_z:.1f}", level=2)
+                    
+        if mode == 'gaussian':
+            background_smooth = gaussian_filter(self.roi_volume, sigma=self.background_sigma)
+        elif mode == 'median':
+            # For median filter, we still use the same size in all dimensions
+            # since it's a discrete operation
+            background_smooth = median_filter(self.roi_volume, size=self.median_filter_size)
+        
+        self._log("Background smoothing complete", level=1, timing=time.time() - start_time)
+        self.roi_volume = self.roi_volume / (epsilon + background_smooth)
+        return self.roi_volume
+
     def detrend(self) -> np.ndarray:
         """Remove linear trend from ROI along z-axis.
         
@@ -246,22 +314,28 @@ class VesselTracer:
         
         self._log("Detrending complete", level=1, timing=time.time() - start_time)
         return self.roi_volume
-    
-        
+
     def smooth(self) -> np.ndarray:
-        """Apply Gaussian smoothing to ROI volume."""
+        """Apply regular Gaussian smoothing to ROI volume with proper handling of anisotropic voxels.
+        
+        This is used for noise reduction and vessel enhancement.
+        Uses a smaller smoothing kernel than background smoothing.
+        """
         start_time = time.time()
-        self._log("Smoothing volume...", level=1)
+        self._log("Applying regular smoothing...", level=1)
         
         if not hasattr(self, 'roi_volume'):
             self.detrend()
             
-        self._log(f"Using Gaussian sigma: {self.gauss_sigma}", level=2)
+        self._log(f"Using regular smoothing sigma (pixels):", level=2)
+        self._log(f"  X: {self.gauss_sigma_x:.1f}", level=2)
+        self._log(f"  Y: {self.gauss_sigma_y:.1f}", level=2)
+        self._log(f"  Z: {self.gauss_sigma_z:.1f}", level=2)
+        
+        # Apply 3D Gaussian filter with different sigma for each dimension
         self.smoothed = gaussian_filter(self.roi_volume, sigma=self.gauss_sigma)
         
-        #Do we want to add this here, or do background smoothing to the entire ROI
-
-        self._log("Smoothing complete", level=1, timing=time.time() - start_time)
+        self._log("Regular smoothing complete", level=1, timing=time.time() - start_time)
         return self.smoothed
         
     def binarize(self) -> np.ndarray:
@@ -480,9 +554,9 @@ class VesselTracer:
         print(f"    scalebar_y       -> {self.scalebar_y:8} [Y position of scale bar in plot]")
         
         print("\nPre-processing Parameters:")
-        print(f"    gauss_sigma      -> {self.gauss_sigma:8} [Gaussian smoothing sigma]")
+        print(f"    gauss_sigma      -> {self.micron_gauss_sigma:.1f} µm -> {self.gauss_sigma_x:.1f}, {self.gauss_sigma_y:.1f}, {self.gauss_sigma_z:.1f} pixels")
         print(f"    min_object_size  -> {self.min_object_size:8} [Minimum object size to keep]")
-        print(f"    close_radius     -> {self.close_radius:8} [Closing operation radius in voxels]")
+        print(f"    close_radius     -> {self.micron_close_radius:.1f} µm -> {self.close_radius} pixels")
         print(f"    prune_length     -> {self.prune_length:8} [Length to prune skeleton branches]")
         
         print("\nRegion Settings:")
