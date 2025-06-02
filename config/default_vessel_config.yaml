@@ -1,6 +1,6 @@
 # Region of Interest (ROI) settings
 roi:
-  micron_roi: 200.0  # ROI size in microns
+  micron_roi: 2000.0  # ROI size in microns
   center_x: 1200     # X center coordinate
   center_y: 1250     # Y center coordinate
 
@@ -12,10 +12,11 @@ scalebar:
 
 # Pre-processing parameters
 preprocessing:
-  gauss_sigma: 0.75        # Gaussian smoothing sigma before Frangi/threshold
-  min_object_size: 64     # Minimum object size to keep
-  close_radius: 1.0     # Closing operation radius in voxels
-  prune_length: 5         # Length to prune skeleton branches
-  binarization_method: "triangle"  # "triangle" or "otsu"
-  median_filter_size: 3   # Size of median filter to apply before binarization
-  super_smooth_sigma: 50.0  # Sigma for super smoothing
+  # All size parameters are now in microns
+  gauss_sigma: 2.0  # Regular smoothing sigma in microns (for noise reduction)
+  background_sigma: 3.0 #Background smoothing sigma in microns (for background estimation)
+  median_filter_size: 3.0  # Median filter size in microns
+  close_radius: 2.0  # Closing operation radius in microns
+  min_object_size: 64  # Minimum object size to keep (in voxels)
+  prune_length: 5  # Length to prune skeleton branches (in voxels)
+  binarization_method: 'triangle'  # Method for binarization ('triangle' or 'otsu')
