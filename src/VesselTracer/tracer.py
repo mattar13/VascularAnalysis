@@ -236,6 +236,16 @@ class VesselTracer:
         self._log("Detrending complete", level=1, timing=time.time() - start_time)
         return self.roi_volume
     
+    def background_smoothing(self, epsilon = 1e-6) -> np.ndarray:
+        """Apply super smoothing to ROI volume."""
+        start_time = time.time()
+        self._log("Super smoothing volume...", level=1)
+                    
+        background_smooth = gaussian_filter(self.roi_volume, sigma=self.super_smooth_sigma)
+        
+        self._log("Super smoothing complete", level=1, timing=time.time() - start_time)
+        self.roi_volume = (self.roi_volume - background_smooth) / (epsilon + background_smooth)
+        
     def smooth(self) -> np.ndarray:
         """Apply Gaussian smoothing to ROI volume."""
         start_time = time.time()
@@ -247,6 +257,8 @@ class VesselTracer:
         self._log(f"Using Gaussian sigma: {self.gauss_sigma}", level=2)
         self.smoothed = gaussian_filter(self.roi_volume, sigma=self.gauss_sigma)
         
+        #Do we want to add this here, or do background smoothing to the entire ROI
+
         self._log("Smoothing complete", level=1, timing=time.time() - start_time)
         return self.smoothed
         
@@ -508,6 +520,8 @@ class VesselTracer:
             # Extract ROI
             self._log("1. Extracting ROI...", level=1)
             self.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
+            self.median_filter()
+            self.background_smoothing()
             self.detrend()
             
             # Smooth volume
