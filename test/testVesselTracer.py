@@ -33,15 +33,15 @@ def run_analysis(input_path, output_dir=None):
         tracer.detrend()
         tracer.smooth()
         tracer.binarize()
-        # tracer.trace_paths()
+        tracer.trace_paths()
         
         # print("Detecting regions...")
-        # regions = tracer.determine_regions()
-        # for region, (peak, sigma, bounds) in regions.items():
-        #     print(f"\n{region}:")
-        #     print(f"  Peak position: {peak:.1f}")
-        #     print(f"  Width (sigma): {sigma:.1f}")
-        #     print(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}")
+        regions = tracer.determine_regions()
+        for region, (peak, sigma, bounds) in regions.items():
+            print(f"\n{region}:")
+            print(f"  Peak position: {peak:.1f}")
+            print(f"  Width (sigma): {sigma:.1f}")
+            print(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}")
         
         # Save visualizations
         print("Generating visualizations...")
