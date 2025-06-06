@@ -401,13 +401,15 @@ class VesselTracer:
         self._log(f"Skeletonized volume of shape {ske.shape}", level=2)
         
         # Create Skeleton object for path analysis
-        self.skeleton = Skeleton(ske)
+        self.skeleton = skeleton = Skeleton(ske)
         self._log("Created skeleton object", level=2)
         
         # Extract paths from skeleton
         self.paths = {}
         coords = self.skeleton.coordinates
         total_paths = self.skeleton.paths.shape[0]
+        for i in skeleton.n_paths:
+            print(i)
         #This is a very slow operation, lets see what we get until then
         # for i, path in enumerate(self.skeleton.paths):
         #     self._log(f"Processing path {i+1} out of {total_paths}", level=2)
