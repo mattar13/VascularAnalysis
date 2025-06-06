@@ -1,6 +1,6 @@
 # Region of Interest (ROI) settings
 roi:
-  micron_roi: 2000.0  # ROI size in microns
+  micron_roi: 200.0  # ROI size in microns
   center_x: 1200     # X center coordinate
   center_y: 1250     # Y center coordinate
 
@@ -10,11 +10,16 @@ scalebar:
   x: 15.0       # X position
   y: 200.0      # Y position
 
+# GPU acceleration settings
+gpu:
+  enabled: true  # Enable GPU acceleration if available
+  memory_limit: 0.8  # Fraction of GPU memory to use (0.0-1.0)
+
 # Pre-processing parameters
 preprocessing:
   # All size parameters are now in microns
   gauss_sigma: 2.0  # Regular smoothing sigma in microns (for noise reduction)
-  background_sigma: 3.0 #Background smoothing sigma in microns (for background estimation)
+  background_sigma: 20.0  # Background smoothing sigma in microns (for background estimation)
   median_filter_size: 3.0  # Median filter size in microns
   close_radius: 2.0  # Closing operation radius in microns
   min_object_size: 64  # Minimum object size to keep (in voxels)
