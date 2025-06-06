@@ -233,10 +233,10 @@ class VesselTracingBenchmark:
                 self.tracer.binarize
             )
             
-            # Step 9: Skeletonization
-            pipeline_results['skeletonization'] = self.benchmark_operation(
-                "Skeletonization",
-                self.tracer.skeletonize
+            # Step 9: Path Tracing
+            pipeline_results['path_tracing'] = self.benchmark_operation(
+                "Path Tracing",
+                self.tracer.trace_paths
             )
             
             # Step 10: Region Analysis

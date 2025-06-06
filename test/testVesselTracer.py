@@ -33,7 +33,7 @@ def run_analysis(input_path, output_dir=None):
         tracer.detrend()
         tracer.smooth()
         tracer.binarize()
-        # tracer.skeletonize()
+        # tracer.trace_paths()
         
         # print("Detecting regions...")
         # regions = tracer.determine_regions()
