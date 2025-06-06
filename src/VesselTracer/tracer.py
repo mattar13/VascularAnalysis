@@ -382,8 +382,8 @@ class VesselTracer:
         self._log("Binarization complete", level=1, timing=time.time() - start_time)
         return bw_vol
         
-    def skeletonize(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        """Create and analyze vessel skeleton.
+    def trace_paths(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Create vessel skeleton and trace paths.
         
         Returns:
             Tuple containing:
@@ -391,7 +391,7 @@ class VesselTracer:
             - stats: DataFrame with branch statistics
         """
         start_time = time.time()
-        self._log("Skeletonizing volume...", level=1)
+        self._log("Tracing vessel paths...", level=1)
         
         if not hasattr(self, 'binary'):
             self.binarize()
@@ -421,7 +421,7 @@ class VesselTracer:
         self.stats = summarize(self.skeleton, separator="-")
         
         self._log(f"Found {len(self.paths)} vessel paths", level=2)
-        self._log("Skeletonization complete", level=1, timing=time.time() - start_time)
+        self._log("Path tracing complete", level=1, timing=time.time() - start_time)
         return self.paths, self.stats
 
     def get_depth_volume(self) -> np.ndarray:
@@ -610,9 +610,9 @@ class VesselTracer:
                 self._log("3. Binarizing vessels...", level=1)
                 self.binarize()
             
-            # Create skeleton
-            self._log("4. Creating skeleton...", level=1)
-            self.skeletonize()
+            # Trace vessel paths
+            self._log("4. Tracing vessel paths...", level=1)
+            self.trace_paths()
             
             # Determine regions
             if not skip_regions:
