@@ -1,0 +1,10 @@
+# GPU acceleration dependencies
+# Install with: pip install -r requirements_gpu.txt
+
+# Core GPU computing library
+cupy-cuda11x>=11.0.0  # For CUDA 11.x systems
+# cupy-cuda12x>=12.0.0  # For CUDA 12.x systems (uncomment if needed)
+
+# Optional: for even faster operations
+# numba>=0.56.0  # JIT compilation support
+# pytorch>=1.12.0  # Alternative tensor operations 
