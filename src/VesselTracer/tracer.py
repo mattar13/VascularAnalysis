@@ -14,6 +14,18 @@ import tifffile
 import time
 from datetime import datetime
 
+# Try to import CuPy for GPU acceleration
+try:
+    import cupy as cp
+    from cupyx.scipy import ndimage as cp_ndimage
+    GPU_AVAILABLE = True
+    print("GPU acceleration available (CuPy found)")
+except ImportError:
+    cp = None
+    cp_ndimage = None
+    GPU_AVAILABLE = False
+    print("GPU acceleration not available (CuPy not found)")
+
 @dataclass
 class VesselTracer:
     """Main class for vessel tracing pipeline.
@@ -21,15 +33,83 @@ class VesselTracer:
     Attributes:
         czi_path: Path to CZI file to analyze
         config_path: Optional path to YAML config file. If None, uses default config.
+        use_gpu: Whether to use GPU acceleration when available
     """
     czi_path: str
     config_path: Optional[str] = None
+    use_gpu: bool = True
     
     def __post_init__(self):
         """Initialize after dataclass creation."""
         self._load_config()
+        self._setup_gpu()
         self._load_image()
         
+    def _setup_gpu(self):
+        """Setup GPU acceleration if available and requested."""
+        self.gpu_enabled = self.use_gpu and GPU_AVAILABLE
+        if self.gpu_enabled:
+            try:
+                # Test GPU availability and set memory limit
+                device = cp.cuda.Device(0)
+                device.compute_capability
+                
+                # Set memory pool limit
+                if hasattr(cp, 'get_default_memory_pool'):
+                    mempool = cp.get_default_memory_pool()
+                    total_gpu_memory = device.mem_info[1]  # Total memory
+                    memory_limit = int(total_gpu_memory * self.gpu_memory_limit)
+                    mempool.set_limit(size=memory_limit)
+                    self._log(f"GPU memory limit set to {memory_limit / 1024**3:.1f} GB", level=2)
+                
+                self._log("GPU acceleration enabled", level=1)
+            except Exception as e:
+                self._log(f"GPU not available, falling back to CPU: {e}", level=1)
+                self.gpu_enabled = False
+        else:
+            if self.use_gpu and not GPU_AVAILABLE:
+                self._log("GPU requested but CuPy not installed, using CPU", level=1)
+            else:
+                self._log("GPU acceleration disabled", level=1)
+    
+    def _to_gpu(self, array: np.ndarray) -> Union[np.ndarray, 'cp.ndarray']:
+        """Move array to GPU if GPU is enabled, otherwise return as-is."""
+        if self.gpu_enabled and cp is not None:
+            return cp.asarray(array)
+        return array
+    
+    def _to_cpu(self, array: Union[np.ndarray, 'cp.ndarray']) -> np.ndarray:
+        """Move array to CPU, handling both numpy and cupy arrays."""
+        if self.gpu_enabled and cp is not None and isinstance(array, cp.ndarray):
+            return cp.asnumpy(array)
+        return array
+    
+    def _gpu_gaussian_filter(self, input_array: np.ndarray, sigma: tuple) -> np.ndarray:
+        """Apply Gaussian filter with GPU acceleration if available."""
+        if self.gpu_enabled and cp is not None:
+            # Move to GPU
+            gpu_array = self._to_gpu(input_array)
+            # Apply GPU Gaussian filter
+            filtered_gpu = cp_ndimage.gaussian_filter(gpu_array, sigma=sigma)
+            # Move back to CPU
+            return self._to_cpu(filtered_gpu)
+        else:
+            # Use CPU implementation
+            return gaussian_filter(input_array, sigma=sigma)
+    
+    def _gpu_median_filter(self, input_array: np.ndarray, size: int) -> np.ndarray:
+        """Apply median filter with GPU acceleration if available."""
+        if self.gpu_enabled and cp is not None:
+            # Move to GPU
+            gpu_array = self._to_gpu(input_array)
+            # Apply GPU median filter
+            filtered_gpu = cp_ndimage.median_filter(gpu_array, size=size)
+            # Move back to CPU
+            return self._to_cpu(filtered_gpu)
+        else:
+            # Use CPU implementation
+            return median_filter(input_array, size=size)
+    
     def _load_config(self):
         """Load configuration from YAML file."""
         if self.config_path is None:
@@ -47,6 +127,11 @@ class VesselTracer:
         self.scalebar_length = config['scalebar']['length']
         self.scalebar_x = config['scalebar']['x']
         self.scalebar_y = config['scalebar']['y']
+        
+        # GPU settings
+        gpu_config = config.get('gpu', {})
+        self.use_gpu = gpu_config.get('enabled', True)
+        self.gpu_memory_limit = gpu_config.get('memory_limit', 0.8)
         
         # Store micron values for reference
         self.micron_gauss_sigma = config['preprocessing']['gauss_sigma']
@@ -241,7 +326,7 @@ class VesselTracer:
         if not hasattr(self, 'roi_volume'): 
             self.segment_roi()
             
-        self.roi_volume = median_filter(self.roi_volume, size=self.median_filter_size)
+        self.roi_volume = self._gpu_median_filter(self.roi_volume, self.median_filter_size)
         
         self._log("Median filter complete", level=1, timing=time.time() - start_time)
         return self.roi_volume
@@ -260,11 +345,11 @@ class VesselTracer:
         self._log(f"  Z: {self.background_sigma_z:.1f}", level=2)
                     
         if mode == 'gaussian':
-            background_smooth = gaussian_filter(self.roi_volume, sigma=self.background_sigma)
+            background_smooth = self._gpu_gaussian_filter(self.roi_volume, self.background_sigma)
         elif mode == 'median':
             # For median filter, we still use the same size in all dimensions
             # since it's a discrete operation
-            background_smooth = median_filter(self.roi_volume, size=self.median_filter_size)
+            background_smooth = self._gpu_median_filter(self.roi_volume, self.median_filter_size)
         
         self._log("Background smoothing complete", level=1, timing=time.time() - start_time)
         self.roi_volume = self.roi_volume / (epsilon + background_smooth)
@@ -333,7 +418,7 @@ class VesselTracer:
         self._log(f"  Z: {self.gauss_sigma_z:.1f}", level=2)
         
         # Apply 3D Gaussian filter with different sigma for each dimension
-        self.smoothed = gaussian_filter(self.roi_volume, sigma=self.gauss_sigma)
+        self.smoothed = self._gpu_gaussian_filter(self.roi_volume, self.gauss_sigma)
         
         self._log("Regular smoothing complete", level=1, timing=time.time() - start_time)
         return self.smoothed
@@ -543,6 +628,19 @@ class VesselTracer:
         print("\nVesselTracer Configuration")
         print("=========================")
         
+        print("\nGPU Settings:")
+        print(f"    GPU Available    -> {GPU_AVAILABLE}")
+        print(f"    GPU Requested    -> {self.use_gpu}")
+        print(f"    GPU Enabled      -> {self.gpu_enabled}")
+        if self.gpu_enabled and cp is not None:
+            try:
+                device = cp.cuda.Device(0)
+                total_mem = device.mem_info[1] / 1024**3  # Convert to GB
+                print(f"    GPU Memory       -> {total_mem:.1f} GB total")
+                print(f"    Memory Limit     -> {self.gpu_memory_limit*100:.0f}% ({total_mem*self.gpu_memory_limit:.1f} GB)")
+            except:
+                print(f"    GPU Memory       -> Unable to query")
+        
         print("\nROI Settings:")
         print(f"    micron_roi  -> {self.micron_roi:8} [Size of region of interest in microns]")
         print(f"    center_x    -> {self.center_x:8} [X coordinate of ROI center]")
@@ -555,6 +653,7 @@ class VesselTracer:
         
         print("\nPre-processing Parameters:")
         print(f"    gauss_sigma      -> {self.micron_gauss_sigma:.1f} µm -> {self.gauss_sigma_x:.1f}, {self.gauss_sigma_y:.1f}, {self.gauss_sigma_z:.1f} pixels")
+        print(f"    background_sigma -> {self.micron_background_sigma:.1f} µm -> {self.background_sigma_x:.1f}, {self.background_sigma_y:.1f}, {self.background_sigma_z:.1f} pixels")
         print(f"    min_object_size  -> {self.min_object_size:8} [Minimum object size to keep]")
         print(f"    close_radius     -> {self.micron_close_radius:.1f} µm -> {self.close_radius} pixels")
         print(f"    prune_length     -> {self.prune_length:8} [Length to prune skeleton branches]")
