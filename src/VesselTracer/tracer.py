@@ -724,59 +724,31 @@ class VesselTracer:
         self._log(f"Starting analysis pipeline...", level=1)
         self._log(f"Output directory: {output_dir}", level=2)
         
-        try:
-            # Extract ROI
-            if self.find_roi:
-                self._log("1. Extracting ROI...", level=1)
-                self.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
-            self.median_filter()
-            
-            # Apply background smoothing
-            self._log("2. Applying background smoothing...", level=1)
-            self.background_smoothing()
-            
-            # Detrend
-            self._log("3. Detrending...", level=1)
-            self.detrend()
-            
-            # Apply regular smoothing if not skipped
-            if not skip_smoothing:
-                self._log("4. Applying regular smoothing...", level=1)
-                self.smooth()
-            
-            # Binarize if not skipped
-            if not skip_binarization:
-                self._log("5. Binarizing...", level=1)
-                self.binarize()
-            
-            # Detect regions if not skipped
-            if not skip_regions:
-                self._log("6. Detecting regions...", level=1)
-                self.determine_regions()
-            
-            # Trace vessel paths if not skipped
-            if not skip_trace:
-                self._log("7. Tracing vessel paths...", level=1)
-                self.trace_paths()
-            
-            # Generate and save DataFrames if not skipped
-            if not skip_dataframe:
-                self._log("8. Generating analysis DataFrames...", level=1)
-                self.generate_analysis_dataframes()
-                excel_path = output_dir / 'analysis_results.xlsx'
-                self._log(f"Saving DataFrames to {excel_path}...", level=2)
-                self.save_analysis_to_excel(excel_path)
-            
-            # Save volumes if requested
-            if save_volumes:
-                self._log("9. Saving volumes...", level=1)
-                self.save_volumes(
-                    output_dir,
-                    save_original=save_original,
-                    save_smoothed=save_smoothed,
-                    save_binary=save_binary,
-                    save_skeleton=save_skeleton
-                )
+        self.run_analysis(
+            skip_smoothing=skip_smoothing,
+            skip_binarization=skip_binarization,
+            skip_regions=skip_regions,
+            skip_trace=skip_trace,
+        )
+       
+        # Generate and save DataFrames if not skipped
+        if not skip_dataframe:
+            self._log("8. Generating analysis DataFrames...", level=1)
+            self.generate_analysis_dataframes()
+            excel_path = output_dir / 'analysis_results.xlsx'
+            self._log(f"Saving DataFrames to {excel_path}...", level=2)
+            self.save_analysis_to_excel(excel_path)
+        
+        # Save volumes if requested
+        if save_volumes:
+            self._log("9. Saving volumes...", level=1)
+            self.save_volumes(
+                output_dir,
+                save_original=save_original,
+                save_smoothed=save_smoothed,
+                save_binary=save_binary,
+                save_skeleton=save_skeleton
+            )
             
             # Save projections if requested
             if save_projections:
@@ -794,10 +766,7 @@ class VesselTracer:
                 self.save_vessel_paths(output_dir)
             
             self._log("Pipeline complete!", level=1, timing=time.time() - start_time)
-            
-        except Exception as e:
-            self._log(f"Error in pipeline: {str(e)}", level=0)
-            raise
+
 
     def update_roi_position(self, center_x: int, center_y: int, micron_roi: Optional[float] = None) -> None:
         """Update the ROI center position and optionally its size.
