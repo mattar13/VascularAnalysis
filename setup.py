@@ -26,6 +26,11 @@ setup(
         "xmltodict",
         "skan",
     ],
+    extras_require={
+        'gpu': [
+            'cupy-cuda11x>=12.0.0',  # Replace 11x with your CUDA version
+        ],
+    },
     author="Matt",
     description="Tools for vascular analysis including DataManager and VesselTracer",
     python_requires=">=3.8",
