@@ -18,10 +18,12 @@ import pandas as pd
 # Try to import CuPy
 try:
     import cupy as cp
+    import cupyx.scipy.ndimage as cp_ndimage
     GPU_AVAILABLE = True
 except ImportError:
     GPU_AVAILABLE = False
     cp = None
+    cp_ndimage = None
 
 @dataclass
 class VesselTracer:
@@ -339,7 +341,18 @@ class VesselTracer:
         if self.find_roi and not hasattr(self, 'valid_frame_range'): 
             self.segment_roi()
             
-        self.volume = median_filter(self.volume, size=self.median_filter_size)
+        if self.use_gpu and GPU_AVAILABLE:
+            self._log("Using GPU acceleration for median filtering", level=2)
+            # Convert to GPU array
+            gpu_volume = cp.asarray(self.volume)
+            
+            # Apply median filter on GPU
+            gpu_filtered = cp_ndimage.median_filter(gpu_volume, size=self.median_filter_size)
+            
+            # Convert back to CPU
+            self.volume = cp.asnumpy(gpu_filtered)
+        else:
+            self.volume = median_filter(self.volume, size=self.median_filter_size)
         
         self._log("Median filter complete", level=1, timing=time.time() - start_time)
         return self.volume
@@ -357,12 +370,28 @@ class VesselTracer:
         self._log(f"  Y: {self.background_sigma_y:.1f}", level=2)
         self._log(f"  Z: {self.background_sigma_z:.1f}", level=2)
         self.unfiltered_volume = self.volume.copy()
-        if mode == 'gaussian':
-            background_smooth = gaussian_filter(self.volume, sigma=self.background_sigma)
-        elif mode == 'median':
-            # For median filter, we still use the same size in all dimensions
-            # since it's a discrete operation
-            background_smooth = median_filter(self.volume, size=self.median_filter_size)
+        
+        if self.use_gpu and GPU_AVAILABLE:
+            self._log("Using GPU acceleration for background smoothing", level=2)
+            # Convert to GPU array
+            gpu_volume = cp.asarray(self.volume)
+            
+            if mode == 'gaussian':
+                background_smooth = cp_ndimage.gaussian_filter(gpu_volume, sigma=self.background_sigma)
+            elif mode == 'median':
+                # For median filter, we still use the same size in all dimensions
+                # since it's a discrete operation
+                background_smooth = cp_ndimage.median_filter(gpu_volume, size=self.median_filter_size)
+            
+            # Convert back to CPU
+            background_smooth = cp.asnumpy(background_smooth)
+        else:
+            if mode == 'gaussian':
+                background_smooth = gaussian_filter(self.volume, sigma=self.background_sigma)
+            elif mode == 'median':
+                # For median filter, we still use the same size in all dimensions
+                # since it's a discrete operation
+                background_smooth = median_filter(self.volume, size=self.median_filter_size)
         
         self._log("Background smoothing complete", level=1, timing=time.time() - start_time)
         self.volume = self.volume / (epsilon + background_smooth)
@@ -407,7 +436,7 @@ class VesselTracer:
             
         # Normalize to [0,1] range
         self.unfiltered_volume = self.volume.copy()
-        self.volume = self._normalize_image(detrended)
+        self.volume = detrended
         
         self._log("Detrending complete", level=1, timing=time.time() - start_time)
         return self.volume
@@ -429,10 +458,22 @@ class VesselTracer:
         self._log(f"  Y: {self.gauss_sigma_y:.1f}", level=2)
         self._log(f"  Z: {self.gauss_sigma_z:.1f}", level=2)
         
-        # Apply 3D Gaussian filter with different sigma for each dimension
-        self.volume = self.smoothed = gaussian_filter(self.volume, sigma=self.gauss_sigma)
+        if self.use_gpu and GPU_AVAILABLE:
+            self._log("Using GPU acceleration for smoothing", level=2)
+            # Convert to GPU array
+            gpu_volume = cp.asarray(self.volume)
+            
+            # Apply 3D Gaussian filter with different sigma for each dimension
+            gpu_smoothed = cp_ndimage.gaussian_filter(gpu_volume, sigma=self.gauss_sigma)
+            
+            # Convert back to CPU
+            self.volume = self.smoothed = cp.asnumpy(gpu_smoothed)
+        else:
+            # Apply 3D Gaussian filter with different sigma for each dimension
+            self.volume = self.smoothed = gaussian_filter(self.volume, sigma=self.gauss_sigma)
         
         self._log("Regular smoothing complete", level=1, timing=time.time() - start_time)
+        return self.volume
 
     def binarize(self) -> np.ndarray:
         """Binarize the smoothed volume using triangle thresholding.
@@ -451,8 +492,19 @@ class VesselTracer:
         thresh = threshold_triangle(self.smoothed.ravel())
         self._log(f"Triangle threshold: {thresh:.3f}", level=2)
         
-        # Apply threshold to entire volume at once
-        bw_vol = self.volume> thresh
+        if self.use_gpu and GPU_AVAILABLE:
+            self._log("Using GPU acceleration for binarization", level=2)
+            # Convert to GPU array
+            gpu_volume = cp.asarray(self.volume)
+            
+            # Apply threshold on GPU
+            bw_vol = gpu_volume > thresh
+            
+            # Convert back to CPU for morphological operations
+            bw_vol = cp.asnumpy(bw_vol)
+        else:
+            # Apply threshold to entire volume at once
+            bw_vol = self.volume > thresh
         
         # Remove small objects in 3D
         bw_vol = remove_small_objects(bw_vol, min_size=self.min_object_size)

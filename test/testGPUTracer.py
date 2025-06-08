@@ -226,6 +226,7 @@ def plot_z_sections(volume, num_sections=5, save_path=None):
         print(f"Saved z-sections plot to {save_path}")
     
     plt.show()
+    plt.close('all')
 
 def plot_gaussian_splat(volume, sigma=2.0, save_path=None, downsample_factor=10):
     """
@@ -278,6 +279,7 @@ def plot_gaussian_splat(volume, sigma=2.0, save_path=None, downsample_factor=10)
         print(f"Saved 3D Gaussian splat plot to {save_path}")
     
     plt.show()
+    plt.close('all')
     
     # Also create a 2D projection for reference
     projection = np.mean(volume, axis=0)
@@ -295,6 +297,7 @@ def plot_gaussian_splat(volume, sigma=2.0, save_path=None, downsample_factor=10)
         print(f"Saved 2D reference plot to {ref_path}")
     
     plt.show()
+    plt.close('all')
 
 def save_volume_as_tiff(volume, output_path, dtype=np.uint16):
     """
@@ -350,13 +353,9 @@ def main():
         
         print("Activating GPU...")
         tracer.activate_gpu()
-        # Try to activate GPU if available
-        # if gpu_available:
-        #     print("\nAttempting to activate GPU mode...")
-        #     if tracer.activate_gpu():
-        #         print("Successfully activated GPU mode")
-        #     else:
-        #         print("Failed to activate GPU mode, continuing in CPU mode")
+        print(f"GPU activated: {tracer.use_gpu}")   
+        
+        tracer.run_analysis()
         
         # Create output directory if it doesn't exist
         output_dir = Path('test/output')
@@ -372,13 +371,11 @@ def main():
         print("\nPlotting z-sections...")
         plot_z_sections(volume, num_sections=5, 
                        save_path=output_dir / 'z_sections.png')
-        plt.close('all')  # Close all figures
         
         # Plot Gaussian splat
         print("\nPlotting Gaussian splat...")
         plot_gaussian_splat(volume, sigma=2.0,
                            save_path=output_dir / 'gaussian_splat.png')
-        plt.close('all')  # Close all figures
         
     except Exception as e:
         print(f"Error during operations: {e}")
