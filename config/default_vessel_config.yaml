@@ -1,14 +1,10 @@
 # Region of Interest (ROI) settings
 roi:
+  find_roi: False
   micron_roi: 2000.0  # ROI size in microns
   center_x: 1200     # X center coordinate
   center_y: 1250     # Y center coordinate
 
-# Scale bar settings for plotting
-scalebar:
-  length: 25.0  # Length in plot units
-  x: 15.0       # X position
-  y: 200.0      # Y position
 
 # Pre-processing parameters
 preprocessing:
@@ -20,3 +16,10 @@ preprocessing:
   min_object_size: 64  # Minimum object size to keep (in voxels)
   prune_length: 5  # Length to prune skeleton branches (in voxels)
   binarization_method: 'triangle'  # Method for binarization ('triangle' or 'otsu')
+
+
+# Scale bar settings for plotting
+scalebar:
+  length: 25.0  # Length in plot units
+  x: 15.0       # X position
+  y: 200.0      # Y position
