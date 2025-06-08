@@ -226,6 +226,36 @@ class VesselTracer:
         self.volume = array
         self.pixel_size_z, self.pixel_size_y, self.pixel_size_x = self.pixel_sizes
 
+    def activate_gpu(self) -> bool:
+        """Activate GPU mode for processing.
+        
+        Returns:
+            bool: True if GPU mode was successfully activated, False otherwise.
+        """
+        if not self.gpu_available:
+            print("Warning: Cannot activate GPU mode - CuPy is not available.")
+            print("Please install CuPy with the appropriate CUDA version for your system.")
+            return False
+            
+        try:
+            # Test GPU functionality with a simple operation
+            with cp.cuda.Device(0):
+                test_array = cp.array([1, 2, 3])
+                result = test_array + test_array
+                if not isinstance(result, cp.ndarray):
+                    raise RuntimeError("GPU test operation failed")
+            
+            self.use_gpu = True
+            print("GPU mode activated successfully.")
+            print(f"Using GPU: {cp.cuda.runtime.getDeviceProperties(0)['name'].decode()}")
+            return True
+            
+        except Exception as e:
+            print(f"Warning: Failed to activate GPU mode - {str(e)}")
+            print("Falling back to CPU mode.")
+            self.use_gpu = False
+            return False
+        
     def normalize_image(self) -> np.ndarray:
         """Normalize image to [0,1] range."""
         print("volume.shape: ", self.volume.shape)
@@ -984,33 +1014,3 @@ class VesselTracer:
                 self.z_profile_df.to_excel(writer, sheet_name='Z Profile', index=False)
             if not self.paths_df.empty:
                 self.paths_df.to_excel(writer, sheet_name='Vessel Paths', index=False)
-
-    def activate_gpu(self) -> bool:
-        """Activate GPU mode for processing.
-        
-        Returns:
-            bool: True if GPU mode was successfully activated, False otherwise.
-        """
-        if not self.gpu_available:
-            print("Warning: Cannot activate GPU mode - CuPy is not available.")
-            print("Please install CuPy with the appropriate CUDA version for your system.")
-            return False
-            
-        try:
-            # Test GPU functionality with a simple operation
-            with cp.cuda.Device(0):
-                test_array = cp.array([1, 2, 3])
-                result = test_array + test_array
-                if not isinstance(result, cp.ndarray):
-                    raise RuntimeError("GPU test operation failed")
-            
-            self.use_gpu = True
-            print("GPU mode activated successfully.")
-            print(f"Using GPU: {cp.cuda.runtime.getDeviceProperties(0)['name'].decode()}")
-            return True
-            
-        except Exception as e:
-            print(f"Warning: Failed to activate GPU mode - {str(e)}")
-            print("Falling back to CPU mode.")
-            self.use_gpu = False
-            return False
