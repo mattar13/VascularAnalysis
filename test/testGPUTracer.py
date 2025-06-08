@@ -344,6 +344,7 @@ def main():
         # Create VesselTracer in CPU mode
         print("\nInitializing VesselTracer in CPU mode...")
         config_path = Path(__file__).parent.parent / 'config' / 'default_vessel_config.yaml'
+        
         print(f"Config path: {config_path}")
         tracer = VesselTracer(volume, config_path=config_path)
         
