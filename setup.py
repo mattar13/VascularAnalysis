@@ -32,13 +32,6 @@ def get_cupy_package():
         return 'cupy-cuda10x>=12.0.0'
     return None
 
-# Copy packages to root level for easier installation
-if os.path.exists('src/VesselTracer') and not os.path.exists('VesselTracer'):
-    shutil.copytree('src/VesselTracer', 'VesselTracer')
-
-if os.path.exists('src/DataManager') and not os.path.exists('DataManager'):
-    shutil.copytree('src/DataManager', 'DataManager')
-
 # Get GPU dependencies
 gpu_deps = []
 cupy_package = get_cupy_package()
@@ -51,7 +44,8 @@ else:
 setup(
     name="VascularAnalysis",
     version="0.1.0",
-    packages=['VesselTracer', 'DataManager'],
+    packages=find_packages(where='src'),
+    package_dir={'': 'src'},
     install_requires=[
         "numpy>=1.20.0",
         "pandas>=1.3.0",
