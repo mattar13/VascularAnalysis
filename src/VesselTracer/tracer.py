@@ -328,7 +328,7 @@ class VesselTracer:
                     self.valid_frame_range = (0, len(z_profile)-1)
             else:
                 self.valid_frame_range = (0, roi.shape[0]-1)
-            self.volume = self._normalize_image(roi)
+            self.volume = roi
             self._log(f"ROI extraction complete. Final shape: {roi.shape}", level=2)
             self._log("ROI extraction complete", level=1, timing=time.time() - start_time)
             return self.volume
