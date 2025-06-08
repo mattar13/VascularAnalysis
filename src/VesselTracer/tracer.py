@@ -15,6 +15,14 @@ import time
 from datetime import datetime
 import pandas as pd
 
+# Try to import CuPy
+try:
+    import cupy as cp
+    GPU_AVAILABLE = True
+except ImportError:
+    GPU_AVAILABLE = False
+    cp = None
+
 @dataclass
 class VesselTracer:
     """Main class for vessel tracing pipeline.
@@ -36,6 +44,10 @@ class VesselTracer:
         if isinstance(self.config_path, str):
             self.config_path = Path(self.config_path)
             
+        # Initialize GPU mode as disabled
+        self.gpu_available = GPU_AVAILABLE
+        self.use_gpu = False
+            
         self._load_config()
         self._load_image()
         self.volume = self.volume.astype("float32")
@@ -43,7 +55,10 @@ class VesselTracer:
     def _load_config(self):
         """Load configuration from YAML file."""
         if self.config_path is None:
-            self.config_path = Path(__file__).parent.parent.parent / 'config' / 'default_vessel_config.yaml'
+            # Point to the config directory in the project root
+            self.config_path = Path(__file__) / 'config' / 'default_vessel_config.yaml'
+            if not self.config_path.exists():
+                raise FileNotFoundError(f"Default config file not found at {self.config_path}")
         
         with open(self.config_path, 'r') as f:
             config = yaml.safe_load(f)
@@ -969,3 +984,33 @@ class VesselTracer:
                 self.z_profile_df.to_excel(writer, sheet_name='Z Profile', index=False)
             if not self.paths_df.empty:
                 self.paths_df.to_excel(writer, sheet_name='Vessel Paths', index=False)
+
+    def activate_gpu(self) -> bool:
+        """Activate GPU mode for processing.
+        
+        Returns:
+            bool: True if GPU mode was successfully activated, False otherwise.
+        """
+        if not self.gpu_available:
+            print("Warning: Cannot activate GPU mode - CuPy is not available.")
+            print("Please install CuPy with the appropriate CUDA version for your system.")
+            return False
+            
+        try:
+            # Test GPU functionality with a simple operation
+            with cp.cuda.Device(0):
+                test_array = cp.array([1, 2, 3])
+                result = test_array + test_array
+                if not isinstance(result, cp.ndarray):
+                    raise RuntimeError("GPU test operation failed")
+            
+            self.use_gpu = True
+            print("GPU mode activated successfully.")
+            print(f"Using GPU: {cp.cuda.runtime.getDeviceProperties(0)['name'].decode()}")
+            return True
+            
+        except Exception as e:
+            print(f"Warning: Failed to activate GPU mode - {str(e)}")
+            print("Falling back to CPU mode.")
+            self.use_gpu = False
+            return False
