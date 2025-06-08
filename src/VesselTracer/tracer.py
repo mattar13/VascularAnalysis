@@ -175,8 +175,8 @@ class VesselTracer:
         self._convert_to_pixels()
         
         # Normalize volume
-        self.volume = self._normalize_image(self.volume.astype("float32"))
-        
+        self.volume = self.volume.astype("float32")
+
         self._log(f"Image loaded. Shape: {self.volume.shape}", level=2)
         self._log(f"Pixel sizes (µm): X={self.pixel_size_x:.3f}, Y={self.pixel_size_y:.3f}, Z={self.pixel_size_z:.3f}", level=2)
         self._log("Image loading complete", level=1, timing=time.time() - start_time)
@@ -642,6 +642,10 @@ class VesselTracer:
         
         try:
             # Extract ROI
+            # Normalize image before analysis
+            self._log("0. Normalizing image...", level=1)
+            self.normalize_image()
+            
             self._log("1. Extracting ROI...", level=1)
             if self.find_roi:
                 self.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
