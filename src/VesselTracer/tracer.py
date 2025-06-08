@@ -765,7 +765,6 @@ class VesselTracer:
             
             self._log("Pipeline complete!", level=1, timing=time.time() - start_time)
 
-
     def update_roi_position(self, center_x: int, center_y: int, micron_roi: Optional[float] = None) -> None:
         """Update the ROI center position and optionally its size.
         
