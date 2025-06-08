@@ -20,16 +20,22 @@ class VesselTracer:
     """Main class for vessel tracing pipeline.
     
     Attributes:
-        input_data: Either a path to a CZI/TIF file or a 3D numpy array
+        input_data: Either a path to a CZI/TIF file (as string or Path object) or a 3D numpy array
         config_path: Optional path to YAML config file. If None, uses default config.
         pixel_sizes: Optional tuple of (z,y,x) pixel sizes in microns. Defaults to (1.0, 1.0, 1.0).
     """
-    input_data: Union[str, np.ndarray]
-    config_path: Optional[str] = None
+    input_data: Union[str, Path, np.ndarray]
+    config_path: Optional[Union[str, Path]] = None
     pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)
     
     def __post_init__(self):
         """Initialize after dataclass creation."""
+        # Convert string paths to Path objects
+        if isinstance(self.input_data, str):
+            self.input_data = Path(self.input_data)
+        if isinstance(self.config_path, str):
+            self.config_path = Path(self.config_path)
+            
         self._load_config()
         self._load_image()
         self.volume = self._normalize_image(self.volume.astype("float32"))
@@ -146,7 +152,9 @@ class VesselTracer:
         start_time = time.time()
         self._log("Loading image data...", level=1)
         
-        if isinstance(self.input_data, str):
+        self._log(f"Input data type: {type(self.input_data)}", level=2)
+
+        if isinstance(self.input_data, (str, Path)):
             # Handle file input
             file_path = Path(self.input_data)
             if file_path.suffix.lower() == '.czi':
@@ -161,7 +169,7 @@ class VesselTracer:
                 raise ValueError("pixel_sizes must be provided when input_data is an array")
             self._load_array(self.input_data)
         else:
-            raise ValueError("input_data must be either a file path or a numpy array")
+            raise ValueError("input_data must be either a file path (string or Path) or a numpy array")
         
         # Convert micron parameters to pixels
         self._convert_to_pixels()
