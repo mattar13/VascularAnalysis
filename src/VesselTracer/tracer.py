@@ -38,7 +38,7 @@ class VesselTracer:
             
         self._load_config()
         self._load_image()
-        self.volume = self._normalize_image(self.volume.astype("float32"))
+        self.volume = self.volume.astype("float32")
         
     def _load_config(self):
         """Load configuration from YAML file."""
@@ -175,8 +175,6 @@ class VesselTracer:
         self._convert_to_pixels()
         
         # Normalize volume
-        self.volume = self.volume.astype("float32")
-
         self._log(f"Image loaded. Shape: {self.volume.shape}", level=2)
         self._log(f"Pixel sizes (µm): X={self.pixel_size_x:.3f}, Y={self.pixel_size_y:.3f}, Z={self.pixel_size_z:.3f}", level=2)
         self._log("Image loading complete", level=1, timing=time.time() - start_time)
