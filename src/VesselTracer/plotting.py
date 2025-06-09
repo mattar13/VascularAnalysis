@@ -192,12 +192,13 @@ def plot_regions(tracer, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.Axes
     
     return fig, axes
 
-def plot_paths(tracer, figsize=(10, 10)) -> Tuple[plt.Figure, plt.Axes]:
+def plot_paths(tracer, figsize=(10, 10), region_colorcode: bool = False) -> Tuple[plt.Figure, plt.Axes]:
     """Plot vessel paths on top of the maximum intensity projection.
     
     Args:
         tracer: VesselTracer instance with traced paths
         figsize: Figure size tuple (width, height)
+        region_colorcode: If True, color-code paths based on their region
         
     Returns:
         Tuple of (figure, axes)
@@ -212,6 +213,14 @@ def plot_paths(tracer, figsize=(10, 10)) -> Tuple[plt.Figure, plt.Axes]:
     background = np.max(tracer.smoothed if hasattr(tracer, 'smoothed') else tracer.volume, axis=0)
     ax.imshow(background, cmap='gray')
     
+    # Define colors for regions
+    region_colors = {
+        'superficial': 'tab:purple',
+        'intermediate': 'tab:red',
+        'deep': 'tab:blue',
+        'diving': 'magenta'
+    }
+    
     # Plot each path
     for path_id in range(1, tracer.paths.paths.shape[0]):
         path_coords = tracer.paths.path_coordinates(path_id)
@@ -219,7 +228,25 @@ def plot_paths(tracer, figsize=(10, 10)) -> Tuple[plt.Figure, plt.Axes]:
             # Extract x and y coordinates
             x_coords = path_coords[:, 2]  # x is the third coordinate
             y_coords = path_coords[:, 1]  # y is the second coordinate
-            ax.plot(x_coords, y_coords, 'r-', linewidth=1, alpha=0.7)
+            
+            if region_colorcode and hasattr(tracer, 'region_bounds'):
+                # Get the region for each point in the path
+                z_coords = path_coords[:, 0]  # z is the first coordinate
+                regions = [tracer.get_region_for_z(z) for z in z_coords]
+                unique_regions = np.unique(regions)
+
+                if len(unique_regions) > 1:
+                    # Plot as diving vessel if path crosses multiple regions
+                    ax.plot(x_coords, y_coords, color=region_colors['diving'], 
+                           linewidth=1, alpha=0.7, label='diving')
+                else:
+                    # Plot in the color of its single region
+                    region = unique_regions[0]
+                    ax.plot(x_coords, y_coords, color=region_colors[unique_regions[0]],
+                           linewidth=1, alpha=0.7, label=unique_regions[0])
+            else:
+                # Plot entire path in red
+                ax.plot(x_coords, y_coords, 'r-', linewidth=1, alpha=0.7)
     
     ax.set_title('Vessel Paths')
     ax.axis('on')
@@ -228,5 +255,11 @@ def plot_paths(tracer, figsize=(10, 10)) -> Tuple[plt.Figure, plt.Axes]:
     scalebar_length_pixels = int(50 / tracer.pixel_size_x)  # 50 micron scale bar
     ax.plot([20, 20 + scalebar_length_pixels], [background.shape[0] - 20] * 2, 
             'w-', linewidth=2)
+    
+    # Add legend if region colorcoding is enabled
+    if region_colorcode and hasattr(tracer, 'region_bounds'):
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            ax.legend(handles, labels, title='Regions')
     
     return fig, ax
