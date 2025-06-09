@@ -20,7 +20,7 @@ def main(input_path, output_dir=None):
         # Initialize tracer
         print(f"Loading file: {input_path}")
         tracer = VesselTracer(input_path)
-        
+        tracer.activate_gpu()
         # Run the complete pipeline
         print("Running analysis pipeline...")
         tracer.run_pipeline(
@@ -60,5 +60,5 @@ def main(input_path, output_dir=None):
 
 if __name__ == "__main__":
     print("Starting VesselTracer...")
-    input_path = Path("C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\test\\test_files\\240207_002.czi")  # Replace with your input file path
+    input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
     main(input_path)

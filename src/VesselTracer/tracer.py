@@ -58,7 +58,7 @@ class VesselTracer:
         """Load configuration from YAML file."""
         if self.config_path is None:
             # Point to the config directory in the project root
-            self.config_path = Path(__file__) / 'config' / 'default_vessel_config.yaml'
+            self.config_path = Path(__file__).parent.parent.parent / 'config' / 'default_vessel_config.yaml'
             if not self.config_path.exists():
                 raise FileNotFoundError(f"Default config file not found at {self.config_path}")
         
@@ -538,14 +538,14 @@ class VesselTracer:
         self._log(f"Skeletonized volume of shape {ske.shape}", level=2)
         
         # Create Skeleton object for path analysis
-        self.skeleton = skeleton = Skeleton(ske)
+        self.paths = Skeleton(ske)
         self._log("Created skeleton object", level=2)
         
         # Extract paths from skeleton
         self.paths = {}
-        coords = self.skeleton.coordinates
-        total_paths = self.skeleton.paths.shape[0]
-        for i in skeleton.n_paths:
+        coords = self.paths.coordinates
+        total_paths = self.paths.paths.shape[0]
+        for i in range(1,self.paths.n_paths):
             print(i)
         #This is a very slow operation, lets see what we get until then
         # for i, path in enumerate(self.skeleton.paths):
@@ -557,7 +557,7 @@ class VesselTracer:
         #     self.paths[i] = path_coords  # Store the coordinates array
         
         # Get detailed statistics using skan's summarize function
-        self.stats = summarize(self.skeleton, separator="-")
+        self.stats = summarize(self.paths, separator="-")
         
         self._log(f"Found {len(self.paths)} vessel paths", level=2)
         self._log("Path tracing complete", level=1, timing=time.time() - start_time)
@@ -837,7 +837,7 @@ class VesselTracer:
         # Save volumes if requested
         if save_volumes:
             self._log("9. Saving volumes...", level=1)
-            self.save_volumes(
+            self.save_volume(
                 output_dir,
                 save_original=save_original,
                 save_smoothed=save_smoothed,
@@ -911,8 +911,6 @@ class VesselTracer:
         output_path.mkdir(parents=True, exist_ok=True)
         
         # Ensure we have the volumes we want to save
-        if not hasattr(self, 'volume'):
-            self.segment_roi()
         if save_smoothed and not hasattr(self, 'smoothed'):
             self.smooth()
         if save_binary and not hasattr(self, 'binary'):
