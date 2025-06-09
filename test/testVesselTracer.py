@@ -40,17 +40,20 @@ def main(input_path, output_dir=None):
             save_binary=True,
             save_separate=True,
         )
-        fig1, ax1 = plot_projections(tracer)
+        fig1, ax1 = plot_projections(tracer, mode='smoothed')
         fig1.savefig(output_dir / "projections.png")
 
-        fig2, ax2 = plot_regions(tracer)
-        fig2.savefig(output_dir / "regions.png")
+        fig2, ax2 = plot_projections(tracer, mode='background')
+        fig2.savefig(output_dir / "background_projections.png")
+
+        fig3, ax3 = plot_regions(tracer)
+        fig3.savefig(output_dir / "regions.png")
         
-        fig3, ax3 = plot_paths(tracer, region_colorcode=True)
-        fig3.savefig(output_dir / "paths.png")
+        fig4, ax4 = plot_paths(tracer, region_colorcode=True)
+        fig4.savefig(output_dir / "paths.png")
         
-        fig4, ax4 = plot_projections_w_paths(tracer, region_colorcode=True)
-        fig4.savefig(output_dir / "projections_w_paths.png")
+        fig5, ax5 = plot_projections_w_paths(tracer, region_colorcode=True)
+        fig5.savefig(output_dir / "projections_w_paths.png")
         
         plt.close('all')
 
