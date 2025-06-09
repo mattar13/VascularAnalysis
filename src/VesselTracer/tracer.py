@@ -542,11 +542,10 @@ class VesselTracer:
         self._log("Created skeleton object", level=2)
         
         # Extract paths from skeleton
-        self.paths = {}
+        # self.paths = {}
         coords = self.paths.coordinates
-        total_paths = self.paths.paths.shape[0]
-        for i in range(1,self.paths.n_paths):
-            print(i)
+        # for i in range(1,self.paths.n_paths):
+        #     print(i)
         #This is a very slow operation, lets see what we get until then
         # for i, path in enumerate(self.skeleton.paths):
         #     self._log(f"Processing path {i+1} out of {total_paths}", level=2)
@@ -559,7 +558,7 @@ class VesselTracer:
         # Get detailed statistics using skan's summarize function
         self.stats = summarize(self.paths, separator="-")
         
-        self._log(f"Found {len(self.paths)} vessel paths", level=2)
+        self._log(f"Found {self.paths.paths.shape[0]} vessel paths", level=2)
         self._log("Path tracing complete", level=1, timing=time.time() - start_time)
         return self.paths, self.stats
 
@@ -781,19 +780,27 @@ class VesselTracer:
       
     def run_pipeline(self,
                     output_dir: Union[str, Path],
-                    save_original: bool = True,
-                    save_smoothed: bool = True,
-                    save_binary: bool = True,
-                    save_skeleton: bool = True,
-                    save_volumes: bool = True,
-                    save_projections: bool = True,
-                    save_regions: bool = True,
-                    save_paths: bool = True,
+                    
+                    #Do we conduct any part of the analysis? 
                     skip_smoothing: bool = False,
                     skip_binarization: bool = False,
                     skip_regions: bool = False,
                     skip_trace: bool = False,
-                    skip_dataframe: bool = False) -> None:
+                    #Do we generate the DataFrames?
+
+                    skip_dataframe: bool = False,
+                    #Options to save the volumes
+                    save_volumes: bool = True,
+                    save_original: bool = True,
+                    save_smoothed: bool = True,
+                    save_binary: bool = True,
+                    save_separate: bool = False,
+
+                    plot_projections: bool = True,
+                    plot_regions: bool = True,
+                    plot_paths: bool = True,
+
+                ) -> None:
         """Run the complete analysis pipeline and save all outputs.
         
         Args:
@@ -842,25 +849,32 @@ class VesselTracer:
                 save_original=save_original,
                 save_smoothed=save_smoothed,
                 save_binary=save_binary,
-                save_skeleton=save_skeleton
+                save_separate=save_separate
             )
             
-            # Save projections if requested
-            if save_projections:
-                self._log("10. Saving projections...", level=1)
-                self.save_projections(output_dir)
+            # # Save projections if requested
+            # if save_projections:
+            #     self._log("10. Saving projections...", level=1)
+            #     self.save_projections(output_dir)
             
-            # Save region analysis if requested and available
-            if save_regions and hasattr(self, 'region_bounds'):
-                self._log("11. Saving region analysis...", level=1)
-                self.save_region_analysis(output_dir)
+            # # Save region analysis if requested and available
+            # if save_regions and hasattr(self, 'region_bounds'):
+            #     self._log("11. Saving region analysis...", level=1)
+            #     self.save_region_analysis(output_dir)
             
-            # Save vessel paths if requested and available
-            if save_paths and hasattr(self, 'paths'):
-                self._log("12. Saving vessel paths...", level=1)
-                self.save_vessel_paths(output_dir)
+            # # Save vessel paths if requested and available
+            # if save_paths and hasattr(self, 'paths'):
+            #     self._log("12. Saving vessel paths...", level=1)
+            #     self.save_vessel_paths(output_dir)
             
             self._log("Pipeline complete!", level=1, timing=time.time() - start_time)
+
+        if plot_projections:
+            fig1, ax = plot_projections(self)   
+        if plot_regions:
+            fig2, ax = plot_regions(self)
+        if plot_paths:
+            fig3, ax = plot_paths(self)
 
     def update_roi_position(self, center_x: int, center_y: int, micron_roi: Optional[float] = None) -> None:
         """Update the ROI center position and optionally its size.
@@ -1018,7 +1032,9 @@ class VesselTracer:
         # Create vessel paths DataFrame if available
         if hasattr(self, 'paths'):
             vessel_paths_data = []
-            for path_id, path_coords in self.paths.items():
+            print(self.paths.paths.shape[0])
+            for path_id in range(1,self.paths.paths.shape[0]):
+                path_coords = self.paths.path_coordinates(path_id)
                 # Convert path coordinates to DataFrame rows
                 for i, coords in enumerate(path_coords):
                     vessel_paths_data.append({
