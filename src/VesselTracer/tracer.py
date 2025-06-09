@@ -37,10 +37,22 @@ class VesselTracer:
     input_data: Union[str, Path, np.ndarray]
     config_path: Optional[Union[str, Path]] = None
     pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)
-    
+       
     #Initialize the class and load image and config
-    def __post_init__(self):
-        """Initialize after dataclass creation."""
+    def __init__(self, input_data: Union[str, Path, np.ndarray],
+                 config_path: Optional[Union[str, Path]] = None,
+                 pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)):
+        """Initialize VesselTracer with input data and configuration.
+        
+        Args:
+            input_data: Either a path to a CZI/TIF file (as string or Path object) or a 3D numpy array
+            config_path: Optional path to YAML config file. If None, uses default config
+            pixel_sizes: Tuple of (z,y,x) pixel sizes in microns. Defaults to (1.0, 1.0, 1.0)
+        """
+        self.input_data = input_data
+        self.config_path = config_path
+        self.pixel_sizes = pixel_sizes
+        
         # Convert string paths to Path objects
         if isinstance(self.input_data, str):
             self.input_data = Path(self.input_data)
@@ -50,11 +62,36 @@ class VesselTracer:
         # Initialize GPU mode as disabled
         self.gpu_available = GPU_AVAILABLE
         self.use_gpu = False
-            
+        
+        # Initialize other attributes
+        self.volume = None
+        self.find_roi = None
+        self.micron_roi = None
+        self.center_x = None
+        self.center_y = None
+        self.scalebar_length = None
+        self.scalebar_x = None
+        self.scalebar_y = None
+        self.micron_gauss_sigma = None
+        self.micron_background_sigma = None
+        self.micron_median_filter_size = None
+        self.micron_close_radius = None
+        self.gauss_sigma_x = None
+        self.gauss_sigma_y = None
+        self.gauss_sigma_z = None
+        self.background_sigma_x = None
+        self.background_sigma_y = None
+        
+        # Load config and image
         self._load_config()
         self._load_image()
         self.volume = self.volume.astype("float32")
-        
+
+        # Initialize image volumes
+        self.background = self.volume.copy()
+        self.smoothed = self.volume.copy() 
+        self.binary = self.volume.copy()
+    
     def _load_config(self):
         """Load configuration from YAML file."""
         if self.config_path is None:
@@ -348,6 +385,7 @@ class VesselTracer:
             
         self._log(f"Configuration saved to {output_path}", level=1)
 
+    
     #Now we can start the functions used to process the images 
     def normalize_image(self) -> np.ndarray:
         """Normalize image to [0,1] range."""
@@ -425,27 +463,50 @@ class VesselTracer:
             return self.volume
     
     def median_filter(self) -> np.ndarray:
-        """Apply median filter to volume."""
+        """Apply median filter for background subtraction.
+        
+        Creates a background image using median filtering and subtracts it from 
+        the original image. This technique is commonly used for background 
+        correction in microscopy images.
+        """
         start_time = time.time()
-        self._log("Applying median filter...", level=1)
+        self._log("Applying median filter for background subtraction...", level=1)
         
         if self.find_roi and not hasattr(self, 'valid_frame_range'): 
             self.segment_roi()
             
+        self._log(f"Median filter size: {self.median_filter_size} pixels", level=2)
+        
+        # Store original volume before processing
+        original_volume = self.volume.copy()
+        
         if self.use_gpu and GPU_AVAILABLE:
             self._log("Using GPU acceleration for median filtering", level=2)
             # Convert to GPU array
             gpu_volume = cp.asarray(self.volume)
             
-            # Apply median filter on GPU
-            gpu_filtered = cp_ndimage.median_filter(gpu_volume, size=self.median_filter_size)
+            # Create background image using median filter
+            gpu_background = cp_ndimage.median_filter(gpu_volume, size=self.median_filter_size)
+            
+            # Subtract background from original
+            gpu_corrected = gpu_volume - gpu_background
             
             # Convert back to CPU
-            self.volume = cp.asnumpy(gpu_filtered)
+            background_image = cp.asnumpy(gpu_background)
+            self.volume = cp.asnumpy(gpu_corrected)
         else:
-            self.volume = median_filter(self.volume, size=self.median_filter_size)
+            # Create background image using median filter
+            background_image = median_filter(self.volume, size=self.median_filter_size)
+            
+            # Subtract background from original
+            self.volume = original_volume - background_image
         
-        self._log("Median filter complete", level=1, timing=time.time() - start_time)
+        # Store the background image for reference
+        self.background = background_image
+        
+        self._log("Median filter background subtraction complete", level=1, timing=time.time() - start_time)
+        self._log(f"Background subtracted volume range: [{self.volume.min():.3f}, {self.volume.max():.3f}]", level=2)
+        
         return self.volume
     
     def background_smoothing(self, epsilon = 1e-6, mode = 'gaussian') -> np.ndarray:
@@ -763,8 +824,8 @@ class VesselTracer:
             
         return depth_vol
         
-    def get_projection(self, axis: Union[int, List[int]], operation: str = 'mean') -> np.ndarray:
-        """Generate a projection of the binary volume along specified axis/axes.
+    def get_projection(self, axis: Union[int, List[int]], operation: str = 'mean', volume_type: str = 'binary') -> np.ndarray:
+        """Generate a projection of the specified volume along specified axis/axes.
         
         Args:
             axis: Dimension(s) to project along. Options:
@@ -777,16 +838,18 @@ class VesselTracer:
                 - 'min': Minimum intensity projection
                 - 'mean': Average intensity projection
                 - 'std': Standard deviation projection
+            volume_type: Type of volume to project. Options:
+                - 'binary': Binary volume (default)
+                - 'background': Background volume from median filtering
+                - 'volume': Current processed volume
+                - 'smoothed': Smoothed volume
                 
         Returns:
             np.ndarray: Projected image
             
         Raises:
-            ValueError: If invalid axis or operation specified
+            ValueError: If invalid axis, operation, or volume_type specified
         """
-        if not hasattr(self, 'binary'):
-            self.binarize()
-            
         # Validate operation
         valid_ops = {
             'max': np.max,
@@ -803,15 +866,33 @@ class VesselTracer:
         if not (axis in valid_axes or (isinstance(axis, list) and axis == [1,2])):
             raise ValueError("Axis must be 0 (z), 1 (y), 2 (x), or [1,2] (xy)")
             
+        # Validate and get the specified volume
+        if volume_type == 'binary':
+            if not hasattr(self, 'binary'):
+                self.binarize()
+            volume = self.binary
+        elif volume_type == 'background':
+            if not hasattr(self, 'background'):
+                raise ValueError("Background volume not available. Run median_filter() first.")
+            volume = self.background
+        elif volume_type == 'volume':
+            volume = self.volume
+        elif volume_type == 'smoothed':
+            if not hasattr(self, 'smoothed'):
+                raise ValueError("Smoothed volume not available. Run smooth() first.")
+            volume = self.smoothed
+        else:
+            raise ValueError(f"volume_type must be one of ['binary', 'background', 'volume', 'smoothed']")
+            
         # Get projection function
         proj_func = valid_ops[operation]
         
         # Calculate projection
         if isinstance(axis, list):
             # Special case for xy projection (along z)
-            projection = proj_func(self.binary, axis=tuple(axis))
+            projection = proj_func(volume, axis=tuple(axis))
         else:
-            projection = proj_func(self.binary, axis=axis)
+            projection = proj_func(volume, axis=axis)
             
         return projection
 
@@ -859,14 +940,15 @@ class VesselTracer:
         try:
             # Extract ROI
             # Normalize image before analysis
-            self._log("0. Normalizing image...", level=1)
-            self.normalize_image()
+            # self._log("0. Normalizing image...", level=1)
+            # self.normalize_image()
             
             self._log("1. Extracting ROI...", level=1)
             if self.find_roi:
                 self.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
+            #Determine and subtract the background
             self.median_filter()
-            self.background_smoothing()
+            #self.background_smoothing()
             self.detrend()
             
             # Smooth volume
@@ -974,30 +1056,8 @@ class VesselTracer:
                 save_binary=save_binary,
                 save_separate=save_separate
             )
-            
-            # # Save projections if requested
-            # if save_projections:
-            #     self._log("10. Saving projections...", level=1)
-            #     self.save_projections(output_dir)
-            
-            # # Save region analysis if requested and available
-            # if save_regions and hasattr(self, 'region_bounds'):
-            #     self._log("11. Saving region analysis...", level=1)
-            #     self.save_region_analysis(output_dir)
-            
-            # # Save vessel paths if requested and available
-            # if save_paths and hasattr(self, 'paths'):
-            #     self._log("12. Saving vessel paths...", level=1)
-            #     self.save_vessel_paths(output_dir)
-            
             self._log("Pipeline complete!", level=1, timing=time.time() - start_time)
 
-        # if plot_projections:
-        #     fig1, ax = plot_projections(self)   
-        # if plot_regions:
-        #     fig2, ax = plot_regions(self)
-        # if plot_paths:
-        #     fig3, ax = plot_paths(self)
 
     def update_roi_position(self, center_x: int, center_y: int, micron_roi: Optional[float] = None) -> None:
         """Update the ROI center position and optionally its size.
