@@ -1,6 +1,7 @@
 test/test_files/
 test/output_cpu/
 test/output/
+test/input/
 test/results/
 __pycache__/
 /src/VascularAnalysis.egg-info/
