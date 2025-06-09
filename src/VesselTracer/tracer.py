@@ -38,6 +38,7 @@ class VesselTracer:
     config_path: Optional[Union[str, Path]] = None
     pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)
     
+    #Initialize the class and load image and config
     def __post_init__(self):
         """Initialize after dataclass creation."""
         # Convert string paths to Path objects
@@ -257,7 +258,97 @@ class VesselTracer:
             print("Falling back to CPU mode.")
             self.use_gpu = False
             return False
+
+    def print_config(self):
+        """Print current configuration."""
+        print("\nVesselTracer Configuration")
+        print("=========================")
         
+        print("\nROI Settings:")
+        print(f"    find_roi       -> {self.find_roi}")
+        if self.find_roi:
+            print(f"    micron_roi     -> {self.micron_roi:8} [Size of region of interest in microns]")
+            print(f"    center_x       -> {self.center_x:8} [X coordinate of ROI center]")
+            print(f"    center_y       -> {self.center_y:8} [Y coordinate of ROI center]")
+        
+        print("\nScale Bar Settings:")
+        print(f"    scalebar_length  -> {self.scalebar_length:8} [Length of scale bar in plot units]")
+        print(f"    scalebar_x       -> {self.scalebar_x:8} [X position of scale bar in plot]")
+        print(f"    scalebar_y       -> {self.scalebar_y:8} [Y position of scale bar in plot]")
+        
+        print("\nPre-processing Parameters:")
+        print(f"    gauss_sigma      -> {self.micron_gauss_sigma:.1f} µm -> {self.gauss_sigma_x:.1f}, {self.gauss_sigma_y:.1f}, {self.gauss_sigma_z:.1f} pixels")
+        print(f"    min_object_size  -> {self.min_object_size:8} [Minimum object size to keep]")
+        print(f"    close_radius     -> {self.micron_close_radius:.1f} µm -> {self.close_radius} pixels")
+        print(f"    prune_length     -> {self.prune_length:8} [Length to prune skeleton branches]")
+        
+        print("\nRegion Settings:")
+        print(f"    regions          -> {self.regions}")
+        print(f"    region_peak_distance -> {self.region_peak_distance}")
+        print(f"    region_height_ratio -> {self.region_height_ratio}")
+        print(f"    region_n_stds      -> {self.region_n_stds}")
+        
+        print("\nImage Properties:")
+        print(f"    pixel_size_x     -> {self.pixel_size_x:8.3f} [Pixel size in x direction (µm/pixel)]")
+        print(f"    pixel_size_y     -> {self.pixel_size_y:8.3f} [Pixel size in y direction (µm/pixel)]")
+        print(f"    pixel_size_z     -> {self.pixel_size_z:8.3f} [Pixel size in z direction (µm/pixel)]")
+        print("\n")
+
+    def save_config(self, output_path: Union[str, Path]) -> None:
+        """Save current configuration to a YAML file.
+        
+        Args:
+            output_path: Path where to save the YAML configuration file
+        """
+        output_path = Path(output_path)
+        
+        # Create configuration dictionary
+        config = {
+            'roi': {
+                'find_roi': self.find_roi,
+                'micron_roi': self.micron_roi,
+                'center_x': self.center_x,
+                'center_y': self.center_y
+            },
+            'scalebar': {
+                'length': self.scalebar_length,
+                'x': self.scalebar_x,
+                'y': self.scalebar_y
+            },
+            'preprocessing': {
+                'gauss_sigma': self.micron_gauss_sigma,
+                'background_sigma': self.micron_background_sigma,
+                'median_filter_size': self.micron_median_filter_size,
+                'close_radius': self.micron_close_radius,
+                'min_object_size': self.min_object_size,
+                'prune_length': self.prune_length,
+                'binarization_method': self.binarization_method
+            },
+            'regions': self.regions,
+            'region_peak_distance': self.region_peak_distance,
+            'region_height_ratio': self.region_height_ratio,
+            'region_n_stds': self.region_n_stds,
+            'verbose': self.verbose
+        }
+        
+        # Add pixel sizes if they've been set
+        if hasattr(self, 'pixel_size_x'):
+            config['pixel_sizes'] = {
+                'x': float(self.pixel_size_x),
+                'y': float(self.pixel_size_y),
+                'z': float(self.pixel_size_z)
+            }
+        
+        # Create output directory if it doesn't exist
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save to YAML file
+        with open(output_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+            
+        self._log(f"Configuration saved to {output_path}", level=1)
+
+    #Now we can start the functions used to process the images 
     def normalize_image(self) -> np.ndarray:
         """Normalize image to [0,1] range."""
         print("volume.shape: ", self.volume.shape)
@@ -518,10 +609,94 @@ class VesselTracer:
         self.binary = bw_vol
         self._log("Binarization complete", level=1, timing=time.time() - start_time)
         return bw_vol
+
+    #These functions are now used to trace the paths
+    def determine_regions(self) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
+        """Determine vessel regions based on the mean z-profile.
         
-    def trace_paths(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        Uses peak finding to identify distinct vessel layers and calculates
+        their boundaries based on peak widths.
+        
+        Returns:
+            Dictionary mapping region names to tuples of:
+            (peak_position, sigma, (lower_bound, upper_bound))
+        """
+        # Get mean z-profile (xy projection)
+        mean_zprofile = self.get_projection([1, 2], operation='mean')
+        
+        # Find peaks
+        peaks, _ = find_peaks(mean_zprofile, distance=self.region_peak_distance)
+        
+        # Calculate peak widths
+        widths_all, _, _, _ = peak_widths(
+            mean_zprofile, peaks, rel_height=self.region_height_ratio)
+        
+        # Convert widths to sigmas
+        sigmas = widths_all / (self.region_n_stds * np.sqrt(2 * np.log(2)))
+        
+        # Print peak information
+        for i, pk in enumerate(peaks):
+            self._log(f"Peak at z={pk:.1f}: σ ≈ {sigmas[i]:.2f}")
+        
+        # Create region bounds dictionary
+        self.region_bounds = {
+            region: (mu, sigma, (mu - sigma, mu + sigma))
+            for region, mu, sigma in zip(self.regions, peaks, sigmas)
+        }
+        
+        return self.region_bounds
+     
+    def split_path_at_region_boundaries(self, path_coords: np.ndarray) -> List[Tuple[str, np.ndarray]]:
+        """Split a path into segments based on region boundaries.
+        
+        Args:
+            path_coords: Array of coordinates for a single path
+            
+        Returns:
+            List of tuples containing (region_name, path_segment_coords)
+            where path_segment_coords is a 2D array with:
+            - [:,0] = z-coordinates
+            - [:,1] = x-coordinates
+            - [:,2] = y-coordinates
+        """
+        if not hasattr(self, 'region_bounds'):
+            self.determine_regions()
+            
+        # Get regions for each point in the path
+        regions = [self.get_region_for_z(coord[0]) for coord in path_coords]
+        
+        # Initialize list to store path segments
+        path_segments = []
+        current_segment = []
+        current_region = regions[0]
+        
+        for i, (coord, region) in enumerate(zip(path_coords, regions)):
+            if region != current_region:
+                # If we have points in the current segment, save it
+                if current_segment:
+                    # Convert list of coordinates to numpy array in ZXY format
+                    segment_array = np.array(current_segment)
+                    path_segments.append((current_region, segment_array))
+                # Start new segment
+                current_segment = [coord]
+                current_region = region
+            else:
+                current_segment.append(coord)
+                
+        # Add the last segment if it exists
+        if current_segment:
+            # Convert list of coordinates to numpy array in ZXY format
+            segment_array = np.array(current_segment)
+            path_segments.append((current_region, segment_array))
+            
+        return path_segments
+    
+    def trace_paths(self, split_paths: bool = True) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Create vessel skeleton and trace paths.
         
+        Args:
+            split_paths: Whether to split paths at region boundaries
+            
         Returns:
             Tuple containing:
             - paths: Dictionary of branch paths with coordinates
@@ -541,27 +716,36 @@ class VesselTracer:
         self.paths = Skeleton(ske)
         self._log("Created skeleton object", level=2)
         
-        # Extract paths from skeleton
-        # self.paths = {}
-        coords = self.paths.coordinates
-        # for i in range(1,self.paths.n_paths):
-        #     print(i)
-        #This is a very slow operation, lets see what we get until then
-        # for i, path in enumerate(self.skeleton.paths):
-        #     self._log(f"Processing path {i+1} out of {total_paths}", level=2)
-        #     # Convert sparse matrix path to dense array of indices
-        #     path_indices = path.toarray().flatten().nonzero()[0]
-        #     # Get coordinates for these indices
-        #     path_coords = coords[path_indices]
-        #     self.paths[i] = path_coords  # Store the coordinates array
-        
         # Get detailed statistics using skan's summarize function
         self.stats = summarize(self.paths, separator="-")
+        n_paths = self.paths.n_paths
         
-        self._log(f"Found {self.paths.paths.shape[0]} vessel paths", level=2)
-        self._log("Path tracing complete", level=1, timing=time.time() - start_time)
+        # Process paths and split them at region boundaries
+        if split_paths:
+            self._log("Splitting paths at region boundaries", level=2)
+            split_paths = {}  # Dictionary to store split paths
+            path_id = 1
+            
+            for i in range(1, n_paths):
+                path_coords = self.paths.path_coordinates(i)
+                path_segments = self.split_path_at_region_boundaries(path_coords)
+                
+                # Store each segment as a separate path
+                for region, segment_coords in path_segments:
+                    if len(segment_coords) > 1:  # Only store segments with more than one point
+                        split_paths[path_id] = {
+                            'region': region,
+                            'coordinates': segment_coords  # Already in ZXY format
+                        }
+                        path_id += 1
+            self.paths = split_paths  # Finally set the paths to the split paths
+            self.n_paths = len(self.paths)
+        
+        self._log(f"Found {self.n_paths} vessel path segments across regions", level=2)
+        self._log("Path tracing complete", level=1, timing=time.time() - start_time)    
         return self.paths, self.stats
 
+    #These functions are used for convienance functions to help with plotting
     def get_depth_volume(self) -> np.ndarray:
         """Create a volume where each vessel is labeled by its z-depth.
         
@@ -630,41 +814,6 @@ class VesselTracer:
             projection = proj_func(self.binary, axis=axis)
             
         return projection
-        
-    def determine_regions(self) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
-        """Determine vessel regions based on the mean z-profile.
-        
-        Uses peak finding to identify distinct vessel layers and calculates
-        their boundaries based on peak widths.
-        
-        Returns:
-            Dictionary mapping region names to tuples of:
-            (peak_position, sigma, (lower_bound, upper_bound))
-        """
-        # Get mean z-profile (xy projection)
-        mean_zprofile = self.get_projection([1, 2], operation='mean')
-        
-        # Find peaks
-        peaks, _ = find_peaks(mean_zprofile, distance=self.region_peak_distance)
-        
-        # Calculate peak widths
-        widths_all, _, _, _ = peak_widths(
-            mean_zprofile, peaks, rel_height=self.region_height_ratio)
-        
-        # Convert widths to sigmas
-        sigmas = widths_all / (self.region_n_stds * np.sqrt(2 * np.log(2)))
-        
-        # Print peak information
-        for i, pk in enumerate(peaks):
-            self._log(f"Peak at z={pk:.1f}: σ ≈ {sigmas[i]:.2f}")
-        
-        # Create region bounds dictionary
-        self.region_bounds = {
-            region: (mu, sigma, (mu - sigma, mu + sigma))
-            for region, mu, sigma in zip(self.regions, peaks, sigmas)
-        }
-        
-        return self.region_bounds
 
     def get_region_for_z(self, z_coord: float) -> str:
         """Determine which region a z-coordinate falls into.
@@ -683,41 +832,7 @@ class VesselTracer:
                 return region
         return 'unknown'
 
-    def print_config(self):
-        """Print current configuration."""
-        print("\nVesselTracer Configuration")
-        print("=========================")
-        
-        print("\nROI Settings:")
-        print(f"    find_roi       -> {self.find_roi}")
-        if self.find_roi:
-            print(f"    micron_roi     -> {self.micron_roi:8} [Size of region of interest in microns]")
-            print(f"    center_x       -> {self.center_x:8} [X coordinate of ROI center]")
-            print(f"    center_y       -> {self.center_y:8} [Y coordinate of ROI center]")
-        
-        print("\nScale Bar Settings:")
-        print(f"    scalebar_length  -> {self.scalebar_length:8} [Length of scale bar in plot units]")
-        print(f"    scalebar_x       -> {self.scalebar_x:8} [X position of scale bar in plot]")
-        print(f"    scalebar_y       -> {self.scalebar_y:8} [Y position of scale bar in plot]")
-        
-        print("\nPre-processing Parameters:")
-        print(f"    gauss_sigma      -> {self.micron_gauss_sigma:.1f} µm -> {self.gauss_sigma_x:.1f}, {self.gauss_sigma_y:.1f}, {self.gauss_sigma_z:.1f} pixels")
-        print(f"    min_object_size  -> {self.min_object_size:8} [Minimum object size to keep]")
-        print(f"    close_radius     -> {self.micron_close_radius:.1f} µm -> {self.close_radius} pixels")
-        print(f"    prune_length     -> {self.prune_length:8} [Length to prune skeleton branches]")
-        
-        print("\nRegion Settings:")
-        print(f"    regions          -> {self.regions}")
-        print(f"    region_peak_distance -> {self.region_peak_distance}")
-        print(f"    region_height_ratio -> {self.region_height_ratio}")
-        print(f"    region_n_stds      -> {self.region_n_stds}")
-        
-        print("\nImage Properties:")
-        print(f"    pixel_size_x     -> {self.pixel_size_x:8.3f} [Pixel size in x direction (µm/pixel)]")
-        print(f"    pixel_size_y     -> {self.pixel_size_y:8.3f} [Pixel size in y direction (µm/pixel)]")
-        print(f"    pixel_size_z     -> {self.pixel_size_z:8.3f} [Pixel size in z direction (µm/pixel)]")
-        print("\n")
-
+    #These are pipeline functions used to run the analysis
     def run_analysis(self,
                     skip_smoothing: bool = False,
                     skip_binarization: bool = False,
@@ -764,20 +879,21 @@ class VesselTracer:
                 self._log("3. Binarizing vessels...", level=1)
                 self.binarize()
             
-            # Trace vessel paths
-            self._log("4. Tracing vessel paths...", level=1)
-            if not skip_trace:
-                self.trace_paths()
-            
             # Determine regions
             if not skip_regions:
-                self._log("5. Determining regions...", level=1)
+                self._log("4. Determining regions...", level=1)
                 regions = self.determine_regions()
                 for region, (peak, sigma, bounds) in regions.items():
                     self._log(f"\n{region}:", level=2)
                     self._log(f"  Peak position: {peak:.1f}", level=2)
                     self._log(f"  Width (sigma): {sigma:.1f}", level=2)
                     self._log(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}", level=2)
+            
+            # Trace vessel paths
+            self._log("5. Tracing vessel paths...", level=1)
+            if not skip_trace:
+                self.trace_paths()
+            
             
             self._log("Analysis complete", level=1, timing=time.time() - start_time)
             
@@ -911,6 +1027,7 @@ class VesselTracer:
                 
         print("ROI updated. Next pipeline step will use new parameters.")
 
+    #These functions save the volumes and datasheets for outputting
     def save_volume(self, 
                    output_dir: str,
                    save_original: bool = True,
@@ -1039,17 +1156,18 @@ class VesselTracer:
         # Create vessel paths DataFrame if available
         if hasattr(self, 'paths'):
             vessel_paths_data = []
-            print(self.paths.paths.shape[0])
-            for path_id in range(1,self.paths.paths.shape[0]):
-                path_coords = self.paths.path_coordinates(path_id)
+            for path_id, path_info in self.paths.items():
+                coords = path_info['coordinates']  # Already in ZXY format
+                region = path_info['region']
                 # Convert path coordinates to DataFrame rows
-                for i, coords in enumerate(path_coords):
+                for i, coord in enumerate(coords):
                     vessel_paths_data.append({
                         'Path_ID': path_id,
+                        'Region': region,
                         'Point_Index': i,
-                        'X': coords[2],  # Note: CZI files are typically ZYX order
-                        'Y': coords[1],
-                        'Z': coords[0]
+                        'Z': coord[0],  # Z coordinate
+                        'X': coord[1],  # X coordinate
+                        'Y': coord[2]   # Y coordinate
                     })
             self.paths_df = pd.DataFrame(vessel_paths_data)
         else:
