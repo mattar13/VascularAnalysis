@@ -11,9 +11,11 @@ def main(input_path, output_dir=None):
     # Setup input file
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
-    
+    # Create output directory name based on input file name and timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_stem = input_path.stem
+    output_dir = Path(f'test/output/from{file_stem}_on{timestamp}')
     # Create output directory
-    output_dir = Path('test_results')
     output_dir.mkdir(exist_ok=True)
     
     try:
@@ -25,19 +27,19 @@ def main(input_path, output_dir=None):
         print("Running analysis pipeline...")
         tracer.run_pipeline(
             output_dir=output_dir,
-            save_original=True,
-            save_smoothed=True,
-            save_binary=True,
-            save_skeleton=True,
-            save_volumes=True,
-            save_projections=True,
-            save_regions=True,
-            save_paths=True,
             skip_smoothing=False,
             skip_binarization=False,
             skip_regions=False,
             skip_trace=False,
-            skip_dataframe=False
+            skip_dataframe=False,
+
+            #Save options
+            save_volumes=True,
+            save_original=True,
+            save_smoothed=True,
+            save_binary=True,
+            save_separate=True,
+            
         )
         
         print(f"\nAnalysis complete! Results saved to: {output_dir}")
