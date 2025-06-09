@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
 from VesselTracer import VesselTracer
-from VesselTracer.plotting import plot_projections, plot_mean_zprofile, plot_path_projections
+from VesselTracer.plotting import plot_projections, plot_regions, plot_paths
 import numpy as np
 import pandas as pd
 
@@ -39,9 +39,15 @@ def main(input_path, output_dir=None):
             save_smoothed=True,
             save_binary=True,
             save_separate=True,
-            
         )
-        
+        fig1, ax1 = plot_projections(tracer)
+        fig2, ax2 = plot_regions(tracer)
+        fig3, ax3 = plot_paths(tracer, region_colorcode=True)
+        fig3.savefig(output_dir / "paths.png")
+        fig2.savefig(output_dir / "regions.png")
+        fig1.savefig(output_dir / "projections.png")
+        plt.close('all')
+
         print(f"\nAnalysis complete! Results saved to: {output_dir}")
         
         # Print some basic statistics
