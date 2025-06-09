@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from VesselTracer import VesselTracer
-from VesselTracer.plotting import plot_projections, plot_mean_zprofile
+from VesselTracer.OLD.plotting import plot_projections, plot_mean_zprofile
 
 def create_sphere_volume(size=(100, 100, 100), radius=20):
     """

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
 
 try:
     from VesselTracer import VesselTracer
-    from VesselTracer.tracer import GPU_AVAILABLE
+    from VesselTracer.OLD.tracer import GPU_AVAILABLE
 except ImportError as e:
     print(f"Error importing VesselTracer: {e}")
     print("Make sure you're running from the project root directory")

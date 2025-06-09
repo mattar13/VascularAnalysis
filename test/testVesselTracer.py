@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
 from VesselTracer import VesselTracer
-from VesselTracer.plotting import plot_projections, plot_regions, plot_paths, plot_projections_w_paths
+from VesselTracer.OLD.plotting import plot_projections, plot_regions, plot_paths, plot_projections_w_paths
 import numpy as np
 import pandas as pd
 
