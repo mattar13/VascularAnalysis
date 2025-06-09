@@ -224,3 +224,30 @@ class VesselProcessor:
         vessel_data.binary = bw_vol
         self._log("Binarization complete", level=1, timing=time.time() - start_time)
         return bw_vol
+    
+    def run_processing(self, vessel_data, config):
+        """Run the complete processing pipeline.
+        
+        Args:
+            vessel_data: VesselData object containing the volume
+            config: ConfigManager with processing settings
+        """
+        processing_start = time.time()
+        self._log("Starting processing pipeline...", level=1)
+        
+        # Median filter
+        self._log("Applying median filter...", level=1)
+        self.median_filter(vessel_data, config)
+        
+        # Gaussian filter
+        self._log("Applying Gaussian filter...", level=1)
+        self.gaussian_filter(vessel_data, config)
+        
+        # Detrend
+        self._log("Detrending volume...", level=1)
+        self.detrend(vessel_data)
+        
+        # Binarize
+        self._log("Binarizing volume...", level=1)
+        self.binarize(vessel_data, config)
+        return vessel_data.binary

@@ -38,129 +38,7 @@ class VesselTracer:
                 print(f"{message} (took {timing:.2f}s)")
             else:
                 print(message)
-    
-    def run_pipeline(self, 
-                    vessel_data, 
-                    config, 
-                    processor,
-                    output_dir: Optional[Path] = None,
-                    skip_smoothing: bool = False,
-                    skip_binarization: bool = False,
-                    skip_regions: bool = False,
-                    skip_trace: bool = False,
-                    skip_dataframe: bool = False,
-                    save_volumes: bool = True,
-                    save_original: bool = True,
-                    save_smoothed: bool = True,
-                    save_binary: bool = True,
-                    save_separate: bool = False) -> None:
-        """Run the complete vessel analysis pipeline.
-        
-        Args:
-            vessel_data: VesselData object with loaded image data
-            config: ConfigManager with analysis parameters
-            processor: VesselProcessor for image processing operations
-            output_dir: Directory to save results
-            skip_smoothing: Skip Gaussian smoothing step
-            skip_binarization: Skip binarization step
-            skip_regions: Skip region determination step
-            skip_trace: Skip vessel tracing step
-            skip_dataframe: Skip DataFrame generation step
-            save_volumes: Whether to save volume data
-            save_original: Whether to save original volume
-            save_smoothed: Whether to save smoothed volume
-            save_binary: Whether to save binary volume
-            save_separate: Whether to save volumes as separate files
-        """
-        pipeline_start = time.time()
-        self._log("="*60, level=1)
-        self._log("STARTING VESSEL ANALYSIS PIPELINE", level=1)
-        self._log("="*60, level=1)
-        
-        # Step 1: ROI extraction (if enabled)
-        if config.find_roi:
-            self._log("Step 1: ROI Extraction", level=1)
-            processor.segment_roi(vessel_data, config)
-        else:
-            self._log("Step 1: ROI Extraction - SKIPPED (using full volume)", level=1)
-        
-        # Step 2: Normalize image
-        self._log("Step 2: Image Normalization", level=1)
-        processor.normalize_image(vessel_data)
-        
-        # Step 3: Median filtering
-        self._log("Step 3: Median Filtering", level=1)
-        processor.median_filter(vessel_data, config)
-        
-        # Step 4: Background smoothing
-        self._log("Step 4: Background Smoothing", level=1)
-        processor.gaussian_filter(vessel_data, config, mode='background')
-        
-        # Step 5: Detrending
-        self._log("Step 5: Detrending", level=1)
-        processor.detrend(vessel_data)
-        
-        # Step 6: Regular smoothing
-        if not skip_smoothing:
-            self._log("Step 6: Regular Smoothing", level=1)
-            processor.gaussian_filter(vessel_data, config, mode='smooth')
-        else:
-            self._log("Step 6: Regular Smoothing - SKIPPED", level=1)
-        
-        # Step 7: Binarization
-        if not skip_binarization:
-            self._log("Step 7: Binarization", level=1)
-            processor.binarize(vessel_data, config)
-        else:
-            self._log("Step 7: Binarization - SKIPPED", level=1)
-        
-        # Step 8: Region determination
-        if not skip_regions:
-            self._log("Step 8: Region Determination", level=1)
-            self.determine_regions(vessel_data, config)
-        else:
-            self._log("Step 8: Region Determination - SKIPPED", level=1)
-        
-        # Step 9: Vessel tracing
-        if not skip_trace:
-            self._log("Step 9: Vessel Tracing", level=1)
-            self.run_analysis(vessel_data, config)
-        else:
-            self._log("Step 9: Vessel Tracing - SKIPPED", level=1)
-        
-        # Step 10: Save results
-        if output_dir is not None:
-            self._log("Step 10: Saving Results", level=1)
-            self._save_results(vessel_data, config, output_dir, 
-                             save_volumes, save_original, save_smoothed, 
-                             save_binary, save_separate, skip_dataframe)
-        else:
-            self._log("Step 10: Saving Results - SKIPPED (no output directory)", level=1)
-        
-        total_time = time.time() - pipeline_start
-        self._log("="*60, level=1)
-        self._log(f"PIPELINE COMPLETE - Total time: {total_time:.2f}s", level=1)
-        self._log("="*60, level=1)
-    
-    def run_analysis(self, vessel_data, config) -> None:
-        """Run the vessel analysis workflow (skeletonization and path tracing).
-        
-        Args:
-            vessel_data: VesselData object with binary volume
-            config: ConfigManager with analysis parameters
-        """
-        analysis_start = time.time()
-        self._log("Starting vessel analysis workflow...", level=1)
-        
-        # Skeletonization
-        self.skeletonize(vessel_data, config)
-        
-        # Path tracing
-        self.trace_paths(vessel_data, config)
-        
-        self._log("Vessel analysis workflow complete", level=1, 
-                 timing=time.time() - analysis_start)
-    
+
     def _save_results(self, 
                      vessel_data, 
                      config, 
@@ -484,3 +362,126 @@ class VesselTracer:
         self._log("Path tracing complete", level=1, timing=time.time() - start_time)
         
         return self.paths, self.paths_df 
+    
+    def run_analysis(self, vessel_data, config) -> None:
+        """Run the vessel analysis workflow (skeletonization and path tracing).
+        
+        Args:
+            vessel_data: VesselData object with binary volume
+            config: ConfigManager with analysis parameters
+        """
+        analysis_start = time.time()
+        self._log("Starting vessel analysis workflow...", level=1)
+        
+        # Skeletonization
+        self.skeletonize(vessel_data, config)
+        
+        # Path tracing
+        self.trace_paths(vessel_data, config)
+        
+        self._log("Vessel analysis workflow complete", level=1, 
+            timing=time.time() - analysis_start)
+        
+
+    def run_pipeline(self, 
+                    vessel_data, 
+                    config, 
+                    processor,
+                    output_dir: Optional[Path] = None,
+                    skip_smoothing: bool = False,
+                    skip_binarization: bool = False,
+                    skip_regions: bool = False,
+                    skip_trace: bool = False,
+                    skip_dataframe: bool = False,
+                    save_volumes: bool = True,
+                    save_original: bool = True,
+                    save_smoothed: bool = True,
+                    save_binary: bool = True,
+                    save_separate: bool = False) -> None:
+        """Run the complete vessel analysis pipeline.
+        
+        Args:
+            vessel_data: VesselData object with loaded image data
+            config: ConfigManager with analysis parameters
+            processor: VesselProcessor for image processing operations
+            output_dir: Directory to save results
+            skip_smoothing: Skip Gaussian smoothing step
+            skip_binarization: Skip binarization step
+            skip_regions: Skip region determination step
+            skip_trace: Skip vessel tracing step
+            skip_dataframe: Skip DataFrame generation step
+            save_volumes: Whether to save volume data
+            save_original: Whether to save original volume
+            save_smoothed: Whether to save smoothed volume
+            save_binary: Whether to save binary volume
+            save_separate: Whether to save volumes as separate files
+        """
+        pipeline_start = time.time()
+        self._log("="*60, level=1)
+        self._log("STARTING VESSEL ANALYSIS PIPELINE", level=1)
+        self._log("="*60, level=1)
+        
+        # Step 1: ROI extraction (if enabled)
+        if config.find_roi:
+            self._log("Step 1: ROI Extraction", level=1)
+            processor.segment_roi(vessel_data, config)
+        else:
+            self._log("Step 1: ROI Extraction - SKIPPED (using full volume)", level=1)
+        
+        # Step 2: Normalize image
+        self._log("Step 2: Image Normalization", level=1)
+        processor.normalize_image(vessel_data)
+        
+        # Step 3: Median filtering
+        self._log("Step 3: Median Filtering", level=1)
+        processor.median_filter(vessel_data, config)
+        
+        # Step 4: Background smoothing
+        self._log("Step 4: Background Smoothing", level=1)
+        processor.gaussian_filter(vessel_data, config, mode='background')
+        
+        # Step 5: Detrending
+        self._log("Step 5: Detrending", level=1)
+        processor.detrend(vessel_data)
+        
+        # Step 6: Regular smoothing
+        if not skip_smoothing:
+            self._log("Step 6: Regular Smoothing", level=1)
+            processor.gaussian_filter(vessel_data, config, mode='smooth')
+        else:
+            self._log("Step 6: Regular Smoothing - SKIPPED", level=1)
+        
+        # Step 7: Binarization
+        if not skip_binarization:
+            self._log("Step 7: Binarization", level=1)
+            processor.binarize(vessel_data, config)
+        else:
+            self._log("Step 7: Binarization - SKIPPED", level=1)
+        
+        # Step 8: Region determination
+        if not skip_regions:
+            self._log("Step 8: Region Determination", level=1)
+            self.determine_regions(vessel_data, config)
+        else:
+            self._log("Step 8: Region Determination - SKIPPED", level=1)
+        
+        # Step 9: Vessel tracing
+        if not skip_trace:
+            self._log("Step 9: Vessel Tracing", level=1)
+            self.run_analysis(vessel_data, config)
+        else:
+            self._log("Step 9: Vessel Tracing - SKIPPED", level=1)
+        
+        # Step 10: Save results
+        if output_dir is not None:
+            self._log("Step 10: Saving Results", level=1)
+            self._save_results(vessel_data, config, output_dir, 
+                             save_volumes, save_original, save_smoothed, 
+                             save_binary, save_separate, skip_dataframe)
+        else:
+            self._log("Step 10: Saving Results - SKIPPED (no output directory)", level=1)
+        
+        total_time = time.time() - pipeline_start
+        self._log("="*60, level=1)
+        self._log(f"PIPELINE COMPLETE - Total time: {total_time:.2f}s", level=1)
+        self._log("="*60, level=1)

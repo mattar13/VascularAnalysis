@@ -40,6 +40,7 @@ def main(input_path, output_dir=None):
             save_binary=True,
             save_separate=True,
         )
+        
         fig1, ax1 = plot_projections(tracer)
         fig1.savefig(output_dir / "projections.png")
 
