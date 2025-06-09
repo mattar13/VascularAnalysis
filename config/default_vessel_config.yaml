@@ -17,6 +17,10 @@ preprocessing:
   prune_length: 5  # Length to prune skeleton branches (in voxels)
   binarization_method: 'triangle'  # Method for binarization ('triangle' or 'otsu')
 
+regions:
+ - superficial
+ - intermediate
+ - deep
 
 # Scale bar settings for plotting
 scalebar:
