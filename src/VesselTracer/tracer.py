@@ -381,7 +381,6 @@ class VesselTracer:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
             
         self._log(f"Configuration saved to {output_path}", level=1)
-
     
     #Now we can start the functions used to process the images 
     def normalize_image(self) -> np.ndarray:
@@ -749,7 +748,7 @@ class VesselTracer:
             
         return path_segments
     
-    def trace_paths(self, split_paths: bool = True) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def trace_paths(self, split_paths: bool = False) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Create vessel skeleton and trace paths.
         
         Args:
