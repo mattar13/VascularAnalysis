@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 from mpl_toolkits.mplot3d import Axes3D
 
 def show_max_projection(vol: np.ndarray, ax: Optional[plt.Axes] = None) -> None:
@@ -130,6 +130,104 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
     
     return fig, axes
 
+def plot_paths_on_axis(tracer, ax, projection='xy', region_colorcode: bool = False) -> None:
+    """Plot vessel paths on a given axis.
+    
+    Args:
+        tracer: VesselTracer instance with traced paths
+        ax: Matplotlib axis to plot on
+        projection: Projection plane ('xy', 'xz', or 'zy')
+        region_colorcode: If True, color-code paths based on their region
+    """
+    if not hasattr(tracer, 'paths'):
+        raise ValueError("No paths found. Run trace_paths() first.")
+    
+    # Define colors for regions
+    region_colors = {
+        'superficial': 'tab:purple',
+        'intermediate': 'tab:red',
+        'deep': 'tab:blue',
+        'diving': 'magenta'
+    }
+    
+    # Define coordinate mapping for different projections
+    coord_map = {
+        'xy': (2, 1),  # x, y coordinates
+        'xz': (2, 0),  # x, z coordinates
+        'zy': (0, 1)   # z, y coordinates
+    }
+    
+    if projection not in coord_map:
+        raise ValueError(f"Invalid projection '{projection}'. Must be one of: {list(coord_map.keys())}")
+    
+    x_idx, y_idx = coord_map[projection]
+    
+    # Plot each path
+    for path_id in range(1, tracer.paths.paths.shape[0]):
+        path_coords = tracer.paths.path_coordinates(path_id)
+        if len(path_coords) > 0:
+            # Extract coordinates based on projection
+            x_coords = path_coords[:, x_idx]
+            y_coords = path_coords[:, y_idx]
+            
+            if region_colorcode and hasattr(tracer, 'region_bounds'):
+                # Get the region for each point in the path
+                z_coords = path_coords[:, 0]  # z is always the first coordinate
+                regions = [tracer.get_region_for_z(z) for z in z_coords]
+                unique_regions = np.unique(regions)
+
+                if len(unique_regions) > 1 or unique_regions[0] == 'unknown':
+                    # Plot as diving vessel if path crosses multiple regions
+                    ax.plot(x_coords, y_coords, color=region_colors['diving'], 
+                           linewidth=1, alpha=0.7)
+                else:
+                    # Plot in the color of its single region
+                    region = unique_regions[0]
+                    ax.plot(x_coords, y_coords, color=region_colors[region],
+                           linewidth=1, alpha=0.7)
+            else:
+                # Plot entire path in red
+                ax.plot(x_coords, y_coords, 'r-', linewidth=1, alpha=0.7)
+
+def plot_projections_w_paths(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_coded: bool = False, region_colorcode: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
+    """Create a comprehensive plot showing different projections with vessel paths.
+    
+    Creates a figure with:
+    - Top left: Z projection (xy view) with paths
+    - Top right: Y projection (xz view) with paths
+    - Bottom left: X projection (yz view) with paths
+    - Bottom right: Mean intensity profile
+    
+    Args:
+        tracer: VesselTracer instance with loaded data
+        figsize: Figure size tuple (width, height)
+        mode: Visualization mode, either 'smoothed' or 'binary'
+        depth_coded: If True, creates depth-coded projections where intensity
+                    represents z-position (only works with binary mode)
+        region_colorcode: If True, color-code paths based on their region
+        
+    Returns:
+        Tuple of (figure, dict of axes)
+    """
+    # First create the base projections plot
+    fig, axes = plot_projections(tracer, figsize=figsize, mode=mode, depth_coded=depth_coded)
+    
+    # Add paths to each projection
+    if hasattr(tracer, 'paths'):
+        # Map projection names to their corresponding views
+        projection_map = {
+            'z_proj': 'xy',  # Z projection shows xy view
+            'y_proj': 'xz',  # Y projection shows xz view
+            'x_proj': 'zy'   # X projection shows zy view
+        }
+        
+        # Plot paths on each projection
+        for ax_name, projection in projection_map.items():
+            plot_paths_on_axis(tracer, axes[ax_name], projection=projection, 
+                             region_colorcode=region_colorcode)
+    
+    return fig, axes
+
 def plot_regions(tracer, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Plot the mean z-profile with detected regions alongside y-projection.
     
@@ -192,11 +290,12 @@ def plot_regions(tracer, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.Axes
     
     return fig, axes
 
-def plot_paths(tracer, figsize=(10, 10), region_colorcode: bool = False) -> Tuple[plt.Figure, plt.Axes]:
+def plot_paths(tracer, projection='xy', figsize=(10, 10), region_colorcode: bool = False) -> Tuple[plt.Figure, plt.Axes]:
     """Plot vessel paths on top of the maximum intensity projection.
     
     Args:
         tracer: VesselTracer instance with traced paths
+        projection: Projection plane ('xy', 'xz', or 'zy')
         figsize: Figure size tuple (width, height)
         region_colorcode: If True, color-code paths based on their region
         
@@ -221,34 +320,58 @@ def plot_paths(tracer, figsize=(10, 10), region_colorcode: bool = False) -> Tupl
         'diving': 'magenta'
     }
     
+    # Initialize empty plot objects for legend
+    legend_handles = {}
+    for region, color in region_colors.items():
+        legend_handles[region] = ax.plot([], [], color=color, 
+                                       linewidth=1, alpha=0.7, 
+                                       label=region)[0]
+    
+    # Track which regions are actually used
+    used_regions = set()
+    
+    # Define coordinate mapping for different projections
+    coord_map = {
+        'xy': (2, 1),  # x, y coordinates
+        'xz': (2, 0),  # x, z coordinates
+        'zy': (0, 1)   # z, y coordinates
+    }
+    
+    if projection not in coord_map:
+        raise ValueError(f"Invalid projection '{projection}'. Must be one of: {list(coord_map.keys())}")
+    
+    x_idx, y_idx = coord_map[projection]
+    
     # Plot each path
     for path_id in range(1, tracer.paths.paths.shape[0]):
         path_coords = tracer.paths.path_coordinates(path_id)
         if len(path_coords) > 0:
-            # Extract x and y coordinates
-            x_coords = path_coords[:, 2]  # x is the third coordinate
-            y_coords = path_coords[:, 1]  # y is the second coordinate
+            # Extract coordinates based on projection
+            x_coords = path_coords[:, x_idx]
+            y_coords = path_coords[:, y_idx]
             
             if region_colorcode and hasattr(tracer, 'region_bounds'):
                 # Get the region for each point in the path
-                z_coords = path_coords[:, 0]  # z is the first coordinate
+                z_coords = path_coords[:, 0]  # z is always the first coordinate
                 regions = [tracer.get_region_for_z(z) for z in z_coords]
                 unique_regions = np.unique(regions)
 
-                if len(unique_regions) > 1:
+                if len(unique_regions) > 1 or unique_regions[0] == 'unknown':
                     # Plot as diving vessel if path crosses multiple regions
                     ax.plot(x_coords, y_coords, color=region_colors['diving'], 
-                           linewidth=1, alpha=0.7, label='diving')
+                           linewidth=1, alpha=0.7)
+                    used_regions.add('diving')
                 else:
                     # Plot in the color of its single region
                     region = unique_regions[0]
-                    ax.plot(x_coords, y_coords, color=region_colors[unique_regions[0]],
-                           linewidth=1, alpha=0.7, label=unique_regions[0])
+                    ax.plot(x_coords, y_coords, color=region_colors[region],
+                           linewidth=1, alpha=0.7)
+                    used_regions.add(region)
             else:
                 # Plot entire path in red
                 ax.plot(x_coords, y_coords, 'r-', linewidth=1, alpha=0.7)
     
-    ax.set_title('Vessel Paths')
+    ax.set_title(f'Vessel Paths - {projection.upper()} Projection')
     ax.axis('on')
     
     # Add scale bar
@@ -256,9 +379,10 @@ def plot_paths(tracer, figsize=(10, 10), region_colorcode: bool = False) -> Tupl
     ax.plot([20, 20 + scalebar_length_pixels], [background.shape[0] - 20] * 2, 
             'w-', linewidth=2)
     
-    # Add legend if region colorcoding is enabled
+    # Add legend only for regions that were actually used
     if region_colorcode and hasattr(tracer, 'region_bounds'):
-        handles, labels = ax.get_legend_handles_labels()
+        handles = [legend_handles[region] for region in used_regions]
+        labels = list(used_regions)
         if handles:
             ax.legend(handles, labels, title='Regions')
     
