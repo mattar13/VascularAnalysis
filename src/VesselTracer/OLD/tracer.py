@@ -15,6 +15,7 @@ import time
 from datetime import datetime
 import pandas as pd
 
+#TODO: MCV architecture
 # Try to import CuPy
 try:
     import cupy as cp
