@@ -27,7 +27,11 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
     Args:
         tracer: VesselTracer instance with loaded data
         figsize: Figure size tuple (width, height)
-        mode: Visualization mode, either 'smoothed' or 'binary'
+        mode: Visualization mode. Options:
+            - 'smoothed': Show smoothed volume
+            - 'binary': Show binary volume  
+            - 'background': Show background volume from median filtering
+            - 'volume': Show current processed volume
         depth_coded: If True, creates depth-coded projections where intensity
                     represents z-position (only works with binary mode)
         
@@ -35,14 +39,25 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
         Tuple of (figure, dict of axes)
     """
     # Validate mode
-    if mode not in ['smoothed', 'binary']:
-        raise ValueError("Mode must be either 'smoothed' or 'binary'")
+    valid_modes = ['smoothed', 'binary', 'background', 'volume']
+    if mode not in valid_modes:
+        raise ValueError(f"Mode must be one of {valid_modes}")
     
-    # Ensure required data exists
-    if mode == 'smoothed' and not hasattr(tracer, 'smoothed'):
-        tracer.smooth()
-    elif mode == 'binary' and not hasattr(tracer, 'binary'):
-        tracer.binarize()
+    # Ensure required data exists and get data based on mode
+    if mode == 'smoothed':
+        if not hasattr(tracer, 'smoothed'):
+            tracer.smooth()
+        data = tracer.smoothed
+    elif mode == 'binary':
+        if not hasattr(tracer, 'binary'):
+            tracer.binarize()
+        data = tracer.binary
+    elif mode == 'background':
+        if not hasattr(tracer, 'background'):
+            raise ValueError("Background volume not available. Run median_filter() first.")
+        data = tracer.background
+    elif mode == 'volume':
+        data = tracer.volume
     
     # Create figure with gridspec
     fig = plt.figure(figsize=figsize)
@@ -53,9 +68,6 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
     ax_y = fig.add_subplot(gs[0, 1])  # Y projection (top right)
     ax_x = fig.add_subplot(gs[1, 0])  # X projection (bottom left)
     ax_profile = fig.add_subplot(gs[1, 1])  # Intensity profile (bottom right)
-    
-    # Get data based on mode
-    data = tracer.smoothed if mode == 'smoothed' else tracer.binary
     
     if depth_coded and mode == 'binary':
         # Create depth-coded volume
@@ -269,7 +281,11 @@ def plot_projections_w_paths(tracer, figsize=(10, 10), mode: str = 'smoothed', d
     Args:
         tracer: VesselTracer instance with loaded data
         figsize: Figure size tuple (width, height)
-        mode: Visualization mode, either 'smoothed' or 'binary'
+        mode: Visualization mode. Options:
+            - 'smoothed': Show smoothed volume
+            - 'binary': Show binary volume  
+            - 'background': Show background volume from median filtering
+            - 'volume': Show current processed volume
         depth_coded: If True, creates depth-coded projections where intensity
                     represents z-position (only works with binary mode)
         region_colorcode: If True, color-code paths based on their region
