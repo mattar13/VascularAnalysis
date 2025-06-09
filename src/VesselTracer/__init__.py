@@ -1,21 +1,21 @@
 """
-VesselTracer Package
+VesselTracer Models Package
 
-This package provides tools for analyzing vascular structures in 3D image data,
-including preprocessing, segmentation, skeletonization, and analysis of vessel networks.
-
-Main Components:
-- VesselTracer: Main class for vessel analysis pipeline
-- plotting: Visualization utilities
+This package contains the Model components of the MVC architecture:
+- VesselData: Handles image data storage and basic operations
+- VesselProcessor: Handles image processing algorithms  
+- VesselAnalyzer: Handles analysis algorithms (tracing, region detection)
+- ConfigManager: Handles configuration management
 """
 
-from .tracer import VesselTracer
-from .plotting import show_max_projection
-
-__version__ = '0.1.0'
-__author__ = 'Matt'
+from .vessel_data import VesselData
+from .vessel_processor import VesselProcessor
+from .vessel_analyzer import VesselAnalyzer
+from .config_manager import ConfigManager
 
 __all__ = [
-    'VesselTracer',
-    'show_max_projection',
-]
+    'VesselData',
+    'VesselProcessor', 
+    'VesselAnalyzer',
+    'ConfigManager'
+] 
