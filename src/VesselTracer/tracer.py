@@ -665,17 +665,24 @@ class VesselTracer:
         }
         
         return self.region_bounds
+
+    def get_region_for_z(self, z_coord: float) -> str:
+        """Determine which region a z-coordinate falls into.
         
-    def analyze_layers(self) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
-        """Analyze vessel layers in the binary segmentation."""
-        if not hasattr(self, 'binary'):
-            self.binarize()
+        Args:
+            z_coord: Z-coordinate to check
             
+        Returns:
+            String indicating the region name ('superficial', 'intermediate', 'deep', or 'unknown')
+        """
         if not hasattr(self, 'region_bounds'):
             self.determine_regions()
             
-        return self.region_bounds
-        
+        for region, (_, _, (lower, upper)) in self.region_bounds.items():
+            if lower <= z_coord <= upper:
+                return region
+        return 'unknown'
+
     def print_config(self):
         """Print current configuration."""
         print("\nVesselTracer Configuration")
@@ -869,12 +876,12 @@ class VesselTracer:
             
             self._log("Pipeline complete!", level=1, timing=time.time() - start_time)
 
-        if plot_projections:
-            fig1, ax = plot_projections(self)   
-        if plot_regions:
-            fig2, ax = plot_regions(self)
-        if plot_paths:
-            fig3, ax = plot_paths(self)
+        # if plot_projections:
+        #     fig1, ax = plot_projections(self)   
+        # if plot_regions:
+        #     fig2, ax = plot_regions(self)
+        # if plot_paths:
+        #     fig3, ax = plot_paths(self)
 
     def update_roi_position(self, center_x: int, center_y: int, micron_roi: Optional[float] = None) -> None:
         """Update the ROI center position and optionally its size.
