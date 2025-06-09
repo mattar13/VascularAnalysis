@@ -691,7 +691,7 @@ class VesselTracer:
             
         return path_segments
     
-    def trace_paths(self, split_paths: bool = True) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def trace_paths(self, split_paths: bool = False) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Create vessel skeleton and trace paths.
         
         Args:
@@ -740,6 +740,18 @@ class VesselTracer:
                         path_id += 1
             self.paths = split_paths  # Finally set the paths to the split paths
             self.n_paths = len(self.paths)
+        else:
+            # Convert Skeleton paths to dictionary format
+            path_dict = {}
+            for i in range(1, n_paths):
+                path_coords = self.paths.path_coordinates(i)
+                if len(path_coords) > 1:  # Only store paths with more than one point
+                    path_dict[i] = {
+                        'region': 'unknown',  # No region info since paths weren't split
+                        'coordinates': path_coords  # Already in ZXY format
+                    }
+            self.paths = path_dict
+            self.n_paths = len(self.paths)
         
         self._log(f"Found {self.n_paths} vessel path segments across regions", level=2)
         self._log("Path tracing complete", level=1, timing=time.time() - start_time)    
@@ -763,7 +775,10 @@ class VesselTracer:
             
         return depth_vol
         
-    def get_projection(self, axis: Union[int, List[int]], operation: str = 'mean') -> np.ndarray:
+    def get_projection(self, axis: Union[int, List[int]], operation: str = 'mean',
+                      xrng: Optional[Tuple[int, int]] = None,
+                      yrng: Optional[Tuple[int, int]] = None,
+                      zrng: Optional[Tuple[int, int]] = None) -> np.ndarray:
         """Generate a projection of the binary volume along specified axis/axes.
         
         Args:
@@ -777,6 +792,9 @@ class VesselTracer:
                 - 'min': Minimum intensity projection
                 - 'mean': Average intensity projection
                 - 'std': Standard deviation projection
+            xrng: Optional tuple of (start, end) indices for x dimension
+            yrng: Optional tuple of (start, end) indices for y dimension
+            zrng: Optional tuple of (start, end) indices for z dimension
                 
         Returns:
             np.ndarray: Projected image
@@ -806,12 +824,26 @@ class VesselTracer:
         # Get projection function
         proj_func = valid_ops[operation]
         
+        # Create slice objects for each dimension
+        slices = [slice(None)] * 3  # Default to full range for all dimensions
+        
+        # Update slices based on provided ranges
+        if zrng is not None:
+            slices[0] = slice(zrng[0], zrng[1])
+        if yrng is not None:
+            slices[1] = slice(yrng[0], yrng[1])
+        if xrng is not None:
+            slices[2] = slice(xrng[0], xrng[1])
+            
+        # Apply slices to volume
+        volume_slice = self.binary[tuple(slices)]
+        
         # Calculate projection
         if isinstance(axis, list):
             # Special case for xy projection (along z)
-            projection = proj_func(self.binary, axis=tuple(axis))
+            projection = proj_func(volume_slice, axis=tuple(axis))
         else:
-            projection = proj_func(self.binary, axis=axis)
+            projection = proj_func(volume_slice, axis=axis)
             
         return projection
 
@@ -834,6 +866,7 @@ class VesselTracer:
 
     #These are pipeline functions used to run the analysis
     def run_analysis(self,
+                     split_paths: bool = False,
                     skip_smoothing: bool = False,
                     skip_binarization: bool = False,
                     skip_regions: bool = False, 
@@ -892,7 +925,7 @@ class VesselTracer:
             # Trace vessel paths
             self._log("5. Tracing vessel paths...", level=1)
             if not skip_trace:
-                self.trace_paths()
+                self.trace_paths(split_paths=split_paths)
             
             
             self._log("Analysis complete", level=1, timing=time.time() - start_time)
@@ -903,7 +936,7 @@ class VesselTracer:
       
     def run_pipeline(self,
                     output_dir: Union[str, Path],
-                    
+                    split_paths: bool = False,
                     #Do we conduct any part of the analysis? 
                     skip_smoothing: bool = False,
                     skip_binarization: bool = False,
@@ -950,6 +983,7 @@ class VesselTracer:
         self._log(f"Output directory: {output_dir}", level=2)
         
         self.run_analysis(
+            split_paths=split_paths,
             skip_smoothing=skip_smoothing,
             skip_binarization=skip_binarization,
             skip_regions=skip_regions,
