@@ -34,10 +34,7 @@ class VesselTracer:
         config_path: Optional path to YAML config file. If None, uses default config.
         pixel_sizes: Optional tuple of (z,y,x) pixel sizes in microns. Defaults to (1.0, 1.0, 1.0).
     """
-    input_data: Union[str, Path, np.ndarray]
-    config_path: Optional[Union[str, Path]] = None
-    pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)
-       
+      
     #Initialize the class and load image and config
     def __init__(self, input_data: Union[str, Path, np.ndarray],
                  config_path: Optional[Union[str, Path]] = None,
@@ -88,9 +85,9 @@ class VesselTracer:
         self.volume = self.volume.astype("float32")
 
         # Initialize image volumes
-        self.background = self.volume.copy()
-        self.smoothed = self.volume.copy() 
-        self.binary = self.volume.copy()
+        self.background = None
+        self.smoothed = None 
+        self.binary = None
     
     def _load_config(self):
         """Load configuration from YAML file."""
