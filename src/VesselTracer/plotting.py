@@ -148,7 +148,9 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
     
     return fig, axes
 
-def plot_paths_on_axis(tracer, ax, projection='xy', region_colorcode: bool = False, is_3d: bool = False) -> None:
+def plot_paths_on_axis(tracer, ax, 
+                       projection='xy', region_colorcode: bool = False, is_3d: bool = False, 
+                       linedwith = 5, alpha = 0.8) -> None:
     """Plot vessel paths on a given axis.
     
     Args:
@@ -212,15 +214,15 @@ def plot_paths_on_axis(tracer, ax, projection='xy', region_colorcode: bool = Fal
                     color = region_colors[region]
                 
                 if is_3d:
-                    ax.plot(plot_x, plot_y, plot_z, color=color, linewidth=1, alpha=0.7)
+                    ax.plot(plot_x, plot_y, plot_z, color=color, linewidth=linedwith, alpha=alpha)
                 else:
-                    ax.plot(plot_x, plot_y, color=color, linewidth=1, alpha=0.7)
+                    ax.plot(plot_x, plot_y, color=color, linewidth=linedwith, alpha=alpha)
             else:
                 # Plot entire path in red
                 if is_3d:
-                    ax.plot(plot_x, plot_y, plot_z, 'r-', linewidth=1, alpha=0.7)
+                    ax.plot(plot_x, plot_y, plot_z, 'r-', linewidth=linedwith, alpha=alpha)
                 else:
-                    ax.plot(plot_x, plot_y, 'r-', linewidth=1, alpha=0.7)
+                    ax.plot(plot_x, plot_y, 'r-', linewidth=linedwith, alpha=alpha)
 
 def plot_paths(tracer, figsize=(15, 7), region_colorcode: bool = False, projection: str = 'xy') -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Plot vessel paths in both 2D and 3D projections.
@@ -382,161 +384,4 @@ def plot_regions(tracer, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.Axes
     
     return fig, axes
 
-def plot_vertical_region_map(tracer, figsize=(12, 8), projection: str = 'xz', 
-                           show_vessels: bool = True, show_boundaries: bool = True) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
-    """Plot the vertical region map showing how regions are distributed in depth.
-    
-    Creates a visualization showing:
-    - Left: Region map projection with color-coded regions
-    - Right: Mean intensity profile with region boundaries
-    
-    Args:
-        tracer: VesselTracer instance with region map
-        figsize: Figure size tuple (width, height)
-        projection: Projection plane for region map ('xz' or 'yz')
-        show_vessels: If True, overlay vessel paths on the region map
-        show_boundaries: If True, show region boundary lines
-        
-    Returns:
-        Tuple of (figure, dict of axes)
-    """
-    # Ensure region map exists
-    if not hasattr(tracer, 'region_map'):
-        if not hasattr(tracer, 'region_bounds'):
-            tracer.determine_regions()
-        tracer.create_region_map_volume()
-    
-    # Create figure with two subplots
-    fig, (ax_map, ax_profile) = plt.subplots(1, 2, figsize=figsize, 
-                                           gridspec_kw={'width_ratios': [3, 1]})
-    
-    # Create region map projection
-    if projection == 'xz':
-        # Show X-Z view (side view through Y)
-        region_proj = np.max(tracer.region_map, axis=1)  # Max projection along Y axis
-        vessel_data = tracer.get_projection(axis=1, operation='max', volume_type='binary') if show_vessels else None
-        x_label = 'X (pixels)'
-        y_label = 'Z (depth)'
-    elif projection == 'yz':
-        # Show Y-Z view (side view through X)
-        region_proj = np.max(tracer.region_map, axis=2)  # Max projection along X axis
-        vessel_data = tracer.get_projection(axis=2, operation='max', volume_type='binary') if show_vessels else None
-        x_label = 'Y (pixels)'
-        y_label = 'Z (depth)'
-    else:
-        raise ValueError("projection must be 'xz' or 'yz'")
-    
-    # Define region colors and labels
-    region_colors = {
-        0: {'color': [0.9, 0.9, 0.9], 'name': 'Unknown'},      # Light gray
-        1: {'color': [0.8, 0.2, 0.8], 'name': 'Superficial'},  # Purple  
-        2: {'color': [0.8, 0.2, 0.2], 'name': 'Intermediate'}, # Red
-        3: {'color': [0.2, 0.2, 0.8], 'name': 'Deep'}          # Blue
-    }
-    
-    # Create colored region map
-    colored_map = np.zeros((*region_proj.shape, 3))
-    for region_num, info in region_colors.items():
-        mask = region_proj == region_num
-        colored_map[mask] = info['color']
-    
-    # Plot region map
-    ax_map.imshow(colored_map, aspect='auto', origin='upper', extent=[
-        0, region_proj.shape[1], region_proj.shape[0], 0
-    ])
-    
-    # Overlay vessels if requested
-    if show_vessels and vessel_data is not None:
-        # Create vessel overlay (white where vessels exist)
-        vessel_overlay = np.zeros((*vessel_data.shape, 4))  # RGBA
-        vessel_mask = vessel_data > 0
-        vessel_overlay[vessel_mask] = [1, 1, 1, 0.7]  # White with transparency
-        
-        ax_map.imshow(vessel_overlay, aspect='auto', origin='upper', extent=[
-            0, vessel_data.shape[1], vessel_data.shape[0], 0
-        ])
-    
-    # Add region boundaries if requested
-    if show_boundaries and hasattr(tracer, 'region_bounds'):
-        for region_name, (peak, sigma, bounds) in tracer.region_bounds.items():
-            # Draw horizontal lines at region boundaries
-            ax_map.axhline(peak, color='white', linestyle='--', linewidth=2, alpha=0.8)
-            ax_map.axhline(bounds[0], color='white', linestyle=':', linewidth=1, alpha=0.6)
-            ax_map.axhline(bounds[1], color='white', linestyle=':', linewidth=1, alpha=0.6)
-    
-    ax_map.set_xlabel(x_label)
-    ax_map.set_ylabel(y_label)
-    ax_map.set_title(f'Vertical Region Map ({projection.upper()} view)')
-    ax_map.invert_yaxis()  # Z increases downward
-    
-    # Create legend for regions
-    import matplotlib.patches as patches
-    legend_elements = []
-    for region_num, info in region_colors.items():
-        if region_num in np.unique(region_proj):  # Only show regions that exist
-            legend_elements.append(
-                patches.Patch(color=info['color'], label=info['name'])
-            )
-    ax_map.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1, 1))
-    
-    # Plot mean intensity profile with region boundaries
-    mean_zprofile = tracer.get_projection([1, 2], operation='mean')
-    z_positions = np.arange(len(mean_zprofile))
-    ax_profile.plot(mean_zprofile, z_positions, color='black', linewidth=2, label='Mean Intensity')
-    
-    # Add region boundaries to profile plot
-    if hasattr(tracer, 'region_bounds'):
-        region_colors_profile = {
-            'superficial': 'purple',
-            'intermediate': 'red', 
-            'deep': 'blue'
-        }
-        
-        for region_name, (peak, sigma, bounds) in tracer.region_bounds.items():
-            color = region_colors_profile.get(region_name, 'gray')
-            
-            # Add peak line
-            ax_profile.axhline(peak, color=color, linestyle='--', linewidth=2, alpha=0.8)
-            
-            # Add region span
-            ax_profile.axhspan(bounds[0], bounds[1], color=color, alpha=0.2, 
-                             label=f'{region_name.title()} Region')
-            
-            # Add text label
-            ax_profile.text(ax_profile.get_xlim()[1] * 0.1, peak, 
-                          region_name.title(), 
-                          verticalalignment='center',
-                          color=color, fontweight='bold')
-    
-    ax_profile.invert_yaxis()
-    ax_profile.set_xlabel('Mean Intensity')
-    ax_profile.set_ylabel('Z (depth)')
-    ax_profile.set_title('Depth Profile')
-    ax_profile.grid(True, alpha=0.3)
-    
-    # Add some statistics as text
-    if hasattr(tracer, 'region_map'):
-        stats_text = []
-        unique_regions, counts = np.unique(tracer.region_map, return_counts=True)
-        total_voxels = tracer.region_map.size
-        
-        for region_num, count in zip(unique_regions, counts):
-            region_name = region_colors[region_num]['name']
-            percentage = (count / total_voxels) * 100
-            stats_text.append(f'{region_name}: {percentage:.1f}%')
-        
-        # Add text box with statistics
-        textstr = '\n'.join(stats_text)
-        props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
-        ax_profile.text(0.05, 0.95, textstr, transform=ax_profile.transAxes, fontsize=9,
-                       verticalalignment='top', bbox=props)
-    
-    plt.tight_layout()
-    
-    # Return figure and axes dictionary
-    axes = {
-        'region_map': ax_map,
-        'profile': ax_profile
-    }
-    
-    return fig, axes
+
