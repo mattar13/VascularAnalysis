@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
 from VesselTracer import VesselTracer
-from VesselTracer.plotting import plot_projections, plot_regions, plot_paths, plot_projections_w_paths
+from VesselTracer.plotting import plot_projections, plot_regions, plot_paths, plot_projections_w_paths, plot_vertical_region_map
 import numpy as np
 import pandas as pd
 
@@ -54,6 +54,12 @@ def main(input_path, output_dir=None):
         
         fig5, ax5 = plot_projections_w_paths(tracer, region_colorcode=True)
         fig5.savefig(output_dir / "projections_w_paths.png")
+        
+        fig6, ax6 = plot_vertical_region_map(tracer, projection='xz', show_vessels=True)
+        fig6.savefig(output_dir / "vertical_region_map_xz.png")
+        
+        fig7, ax7 = plot_vertical_region_map(tracer, projection='yz', show_vessels=True)
+        fig7.savefig(output_dir / "vertical_region_map_yz.png")
         
         plt.close('all')
 
