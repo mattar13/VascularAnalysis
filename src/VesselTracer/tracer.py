@@ -86,7 +86,6 @@ class VesselTracer:
 
         # Initialize image volumes
         self.background = None
-        self.smoothed = None 
         self.binary = None
     
     def _load_config(self):
@@ -615,10 +614,10 @@ class VesselTracer:
             gpu_smoothed = cp_ndimage.gaussian_filter(gpu_volume, sigma=self.gauss_sigma)
             
             # Convert back to CPU
-            self.volume = self.smoothed = cp.asnumpy(gpu_smoothed)
+            self.volume = cp.asnumpy(gpu_smoothed)
         else:
             # Apply 3D Gaussian filter with different sigma for each dimension
-            self.volume = self.smoothed = gaussian_filter(self.volume, sigma=self.gauss_sigma)
+            self.volume = gaussian_filter(self.volume, sigma=self.gauss_sigma)
         
         self._log("Regular smoothing complete", level=1, timing=time.time() - start_time)
         return self.volume
@@ -929,7 +928,6 @@ class VesselTracer:
                 - 'binary': Binary volume (default)
                 - 'background': Background volume from median filtering
                 - 'volume': Current processed volume
-                - 'smoothed': Smoothed volume
                 - 'region_map': Region map volume with region labels
                 
         Returns:
@@ -965,16 +963,12 @@ class VesselTracer:
             volume = self.background
         elif volume_type == 'volume':
             volume = self.volume
-        elif volume_type == 'smoothed':
-            if not hasattr(self, 'smoothed'):
-                raise ValueError("Smoothed volume not available. Run smooth() first.")
-            volume = self.smoothed
         elif volume_type == 'region_map':
             if not hasattr(self, 'region_map'):
                 raise ValueError("Region map volume not available. Run create_region_map_volume() first.")
             volume = self.region_map
         else:
-            raise ValueError(f"volume_type must be one of ['binary', 'background', 'volume', 'smoothed', 'region_map']")
+            raise ValueError(f"volume_type must be one of ['binary', 'background', 'volume', 'region_map']")
             
         # Get projection function
         proj_func = valid_ops[operation]
@@ -1095,7 +1089,6 @@ class VesselTracer:
                     #Options to save the volumes
                     save_volumes: bool = True,
                     save_original: bool = True,
-                    save_smoothed: bool = True,
                     save_binary: bool = True,
                     save_region_map: bool = True,
                     save_separate: bool = False,
@@ -1110,7 +1103,6 @@ class VesselTracer:
         Args:
             output_dir: Directory to save outputs
             save_original: Whether to save the original volume
-            save_smoothed: Whether to save the smoothed volume
             save_binary: Whether to save the binary volume
             save_region_map: Whether to save the region map volume
             save_volumes: Whether to save any volumes
@@ -1149,7 +1141,6 @@ class VesselTracer:
             self.save_volume(
                 output_dir,
                 save_original=save_original,
-                save_smoothed=save_smoothed,
                 save_binary=save_binary,
                 save_region_map=save_region_map,
                 save_separate=save_separate
@@ -1179,7 +1170,7 @@ class VesselTracer:
             self.micron_roi = micron_roi
         
         # Clear computed results since they're no longer valid
-        for attr in ['volume', 'smoothed', 'binary', 'skeleton', 'stats', 'region_bounds', 'region_map']:
+        for attr in ['volume', 'binary', 'skeleton', 'stats', 'region_bounds', 'region_map']:
             if hasattr(self, attr):
                 delattr(self, attr)
                 
@@ -1189,7 +1180,6 @@ class VesselTracer:
     def save_volume(self, 
                    output_dir: str,
                    save_original: bool = True,
-                   save_smoothed: bool = True,
                    save_binary: bool = True,
                    save_region_map: bool = True,
                    save_separate: bool = False) -> None:
@@ -1198,7 +1188,6 @@ class VesselTracer:
         Args:
             output_dir: Directory to save the .tif files
             save_original: Whether to save the original ROI volume
-            save_smoothed: Whether to save the smoothed volume
             save_binary: Whether to save the binary volume
             save_region_map: Whether to save the region map volume
             save_separate: If True, saves each volume type as a separate file.
@@ -1209,8 +1198,6 @@ class VesselTracer:
         output_path.mkdir(parents=True, exist_ok=True)
         
         # Ensure we have the volumes we want to save
-        if save_smoothed and not hasattr(self, 'smoothed'):
-            self.smooth()
         if save_binary and not hasattr(self, 'binary'):
             self.binarize()
         if save_region_map and not hasattr(self, 'region_map'):
@@ -1223,9 +1210,6 @@ class VesselTracer:
         if save_original:
             volumes.append(self.volume)
             volume_names.append('original')
-        if save_smoothed:
-            volumes.append(self.smoothed)
-            volume_names.append('smoothed')
         if save_binary:
             volumes.append(self.binary.astype(np.uint8))  # Convert boolean to uint8
             volume_names.append('binary')
@@ -1274,7 +1258,6 @@ class VesselTracer:
                 'Timestamp',
                 'Config Used',
                 'ROI Finding',
-                'Smoothing Applied',
                 'Binarization Applied',
                 'Region Detection Applied',
                 'Region Map Created',
@@ -1286,7 +1269,6 @@ class VesselTracer:
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 str(self.config_path),
                 self.find_roi,
-                hasattr(self, 'smoothed'),
                 hasattr(self, 'binary'),
                 hasattr(self, 'region_bounds'),
                 hasattr(self, 'region_map'),
@@ -1480,7 +1462,7 @@ class VesselTracer:
                 self.center_y = center_y
                 
                 # Clear previous results to force recomputation
-                for attr in ['volume', 'smoothed', 'binary', 'background', 'paths', 'stats', 'region_bounds', 'region_map']:
+                for attr in ['volume', 'binary', 'background', 'paths', 'stats', 'region_bounds', 'region_map']:
                     if hasattr(self, attr):
                         delattr(self, attr)
                 
@@ -1581,7 +1563,6 @@ class VesselTracer:
                         self.save_volume(
                             roi_output_dir,
                             save_original=True,
-                            save_smoothed=True,
                             save_binary=True,
                             save_region_map=True,
                             save_separate=False
@@ -1623,7 +1604,7 @@ class VesselTracer:
             self.find_roi = original_find_roi
             
             # Clear any remaining analysis results to avoid confusion
-            for attr in ['volume', 'smoothed', 'binary', 'background', 'paths', 'stats', 'region_bounds', 'region_map']:
+            for attr in ['volume', 'binary', 'background', 'paths', 'stats', 'region_bounds', 'region_map']:
                 if hasattr(self, attr):
                     delattr(self, attr)
 
