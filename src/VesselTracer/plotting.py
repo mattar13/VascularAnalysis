@@ -28,9 +28,10 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
         tracer: VesselTracer instance with loaded data
         figsize: Figure size tuple (width, height)
         mode: Visualization mode. Options:
-            - 'binary': Show binary volume  
-            - 'background': Show background volume from median filtering
-            - 'volume': Show current processed volume
+            - 'volume': Show original volume (global)
+            - 'roi': Show ROI data (local, processed)
+            - 'binary': Show binary vessel volume
+            - 'region': Show region map with color-coded regions
         depth_coded: If True, creates depth-coded projections where intensity
                     represents z-position (only works with binary mode)
         
@@ -38,21 +39,25 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
         Tuple of (figure, dict of axes)
     """
     # Validate mode
-    valid_modes = ['binary', 'background', 'volume']
+    valid_modes = ['volume', 'roi', 'binary', 'region']
     if mode not in valid_modes:
         raise ValueError(f"Mode must be one of {valid_modes}")
     
     # Ensure required data exists and get data based on mode
-    if mode == 'binary':
+    if mode == 'volume':
+        data = tracer.volume
+    elif mode == 'roi':
+        if not hasattr(tracer, 'roi') or tracer.roi is None:
+            raise ValueError("ROI data not available. Run segment_roi() first.")
+        data = tracer.roi
+    elif mode == 'binary':
         if not hasattr(tracer, 'binary'):
             tracer.binarize()
         data = tracer.binary
-    elif mode == 'background':
-        if not hasattr(tracer, 'background'):
-            raise ValueError("Background volume not available. Run median_filter() first.")
-        data = tracer.background
-    elif mode == 'volume':
-        data = tracer.volume
+    elif mode == 'region':
+        if not hasattr(tracer, 'region_map'):
+            tracer.create_region_map_volume()
+        data = tracer.region_map
     
     # Create figure with gridspec
     fig = plt.figure(figsize=figsize)
@@ -88,7 +93,13 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
         z_proj = np.max(data, axis=0)
         y_proj = np.max(data, axis=1)
         x_proj = np.max(data, axis=2)
-        cmap = 'gray'
+        
+        # Choose colormap based on mode
+        if mode == 'region':
+            # Use a discrete colormap for regions
+            cmap = plt.cm.Set1  # Good for discrete categorical data
+        else:
+            cmap = 'gray'
     
     # Plot Z projection (top left)
     im_z = ax_z.imshow(z_proj, cmap=cmap)
@@ -277,9 +288,10 @@ def plot_projections_w_paths(tracer, figsize=(10, 10), mode: str = 'smoothed', d
         tracer: VesselTracer instance with loaded data
         figsize: Figure size tuple (width, height)
         mode: Visualization mode. Options:
-            - 'binary': Show binary volume  
-            - 'background': Show background volume from median filtering
-            - 'volume': Show current processed volume
+            - 'volume': Show original volume (global)
+            - 'roi': Show ROI data (local, processed)
+            - 'binary': Show binary vessel volume
+            - 'region': Show region map with color-coded regions
         depth_coded: If True, creates depth-coded projections where intensity
                     represents z-position (only works with binary mode)
         region_colorcode: If True, color-code paths based on their region
@@ -318,7 +330,9 @@ def plot_regions(tracer, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.Axes
     """
     # Get mean z-profile and y-projection
     mean_zprofile = tracer.get_projection([1, 2], operation='mean')
-    y_proj = np.max(tracer.volume, axis=2)
+    # Use ROI if available, otherwise use volume
+    data_to_project = tracer.roi if hasattr(tracer, 'roi') and tracer.roi is not None else tracer.volume
+    y_proj = np.max(data_to_project, axis=2)
     
     # Determine regions if not already done
     if not hasattr(tracer, 'region_bounds'):
