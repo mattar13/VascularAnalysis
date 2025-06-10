@@ -775,7 +775,7 @@ class VesselTracer:
         
         # Get detailed statistics using skan's summarize function
         self.stats = summarize(self.paths, separator="-")
-        n_paths = self.paths.n_paths
+        self.n_paths = self.paths.n_paths
         
         # Process paths and split them at region boundaries
         if split_paths:
@@ -783,7 +783,7 @@ class VesselTracer:
             split_paths = {}  # Dictionary to store split paths
             path_id = 1
             
-            for i in range(1, n_paths):
+            for i in range(1, self.n_paths):
                 path_coords = self.paths.path_coordinates(i)
                 path_segments = self.split_path_at_region_boundaries(path_coords)
                 
@@ -796,7 +796,7 @@ class VesselTracer:
                         }
                         path_id += 1
             self.paths = split_paths  # Finally set the paths to the split paths
-            self.n_paths = len(self.paths)
+            self.n_paths = len(self.paths) #Adjust the number of paths 
         
         self._log(f"Found {self.n_paths} vessel path segments across regions", level=2)
         self._log("Path tracing complete", level=1, timing=time.time() - start_time)    
