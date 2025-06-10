@@ -506,8 +506,6 @@ class VesselTracer:
         
         return self.roi
     
-    
-
     def detrend(self) -> np.ndarray:
         """Remove linear trend from volume along z-axis.
         
@@ -1112,7 +1110,6 @@ class VesselTracer:
             )
             self._log("Pipeline complete!", level=1, timing=time.time() - start_time)
 
-
     def update_roi_position(self, center_x: int, center_y: int, micron_roi: Optional[float] = None) -> None:
         """Update the ROI center position and optionally its size.
         
@@ -1139,6 +1136,9 @@ class VesselTracer:
         for attr in ['roi', 'binary']:
             if hasattr(self, attr):
                 delattr(self, attr)
+        print("Storing old paths as old paths")
+        self.old_paths = self.paths.copy()
+        self.paths = None
                 
         print("ROI updated. Next pipeline step will use new parameters.")
 
@@ -1392,6 +1392,12 @@ class VesselTracer:
                 # Update ROI position (this will clear roi and binary, but preserve volume and paths)
                 self.update_roi_position(x + pixel_roi//2, y + pixel_roi//2)
                 
+                #Check to see if there are paths
+                if hasattr(self, 'paths') and self.paths:
+                    old_paths = self.paths.copy()
+                else:
+                    old_paths = None
+
                 # Run analysis on this ROI
                 self.run_analysis(
                     skip_smoothing=False,
@@ -1403,6 +1409,9 @@ class VesselTracer:
                 # Generate analysis data
                 self.generate_analysis_dataframes()
                 
+                #Store the old paths here
+                new_paths = self.paths.copy()
+
                 # Convert local path coordinates to global coordinates
                 if hasattr(self, 'paths') and self.paths:
                     for path_id, path_info in self.paths.items():
@@ -1416,6 +1425,7 @@ class VesselTracer:
                             # Add offset to x and y coordinates (z remains the same)
                             coords[:, 1] += roi_start_x  # X coordinate
                             coords[:, 2] += roi_start_y  # Y coordinate
+
 
                 # Store results with position info
                 roi_data = {
