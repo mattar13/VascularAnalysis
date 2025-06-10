@@ -770,35 +770,78 @@ class VesselTracer:
         self._log(f"Skeletonized volume of shape {ske.shape}", level=2)
         
         # Create Skeleton object for path analysis
-        self.paths = Skeleton(ske)
+        skeleton_obj = Skeleton(ske)
         self._log("Created skeleton object", level=2)
         
         # Get detailed statistics using skan's summarize function
-        self.stats = summarize(self.paths, separator="-")
-        self.n_paths = self.paths.n_paths
+        self.stats = summarize(skeleton_obj, separator="-")
+        n_paths = skeleton_obj.n_paths
         
-        # Process paths and split them at region boundaries
-        if split_paths:
-            self._log("Splitting paths at region boundaries", level=2)
-            split_paths = {}  # Dictionary to store split paths
-            path_id = 1
-            
-            for i in range(1, self.n_paths):
-                path_coords = self.paths.path_coordinates(i)
-                path_segments = self.split_path_at_region_boundaries(path_coords)
+        # Convert skeleton object to dictionary with region information
+        paths_dict = {}
+        path_id = 1
+        
+        self._log(f"Processing {n_paths} skeleton paths", level=2)
+        
+        for i in range(n_paths):
+            try:
+                # Get path coordinates from skeleton object
+                path_coords = skeleton_obj.path_coordinates(i)
                 
-                # Store each segment as a separate path
-                for region, segment_coords in path_segments:
-                    if len(segment_coords) > 1:  # Only store segments with more than one point
-                        split_paths[path_id] = {
-                            'region': region,
-                            'coordinates': segment_coords  # Already in ZXY format
-                        }
-                        path_id += 1
-            self.paths = split_paths  # Finally set the paths to the split paths
-            self.n_paths = len(self.paths) #Adjust the number of paths 
+                if len(path_coords) == 0:
+                    continue
+                    
+                if split_paths:
+                    # Split path at region boundaries and create separate entries
+                    path_segments = self.split_path_at_region_boundaries(path_coords)
+                    
+                    for region, segment_coords in path_segments:
+                        if len(segment_coords) > 1:  # Only store segments with more than one point
+                            paths_dict[path_id] = {
+                                'original_path_id': i,
+                                'region': region,
+                                'coordinates': segment_coords,
+                                'length': len(segment_coords)
+                            }
+                            path_id += 1
+                else:
+                    # Determine the primary region for this path using z-coordinates
+                    z_coords = path_coords[:, 0]  # Extract z-coordinates
+                    regions_in_path = [self.get_region_for_z(z) for z in z_coords]
+                    
+                    # Find the most common region in this path
+                    from collections import Counter
+                    region_counts = Counter(regions_in_path)
+                    primary_region = region_counts.most_common(1)[0][0]
+                    
+                    # Calculate what fraction of path is in each region
+                    region_fractions = {region: count/len(regions_in_path) 
+                                      for region, count in region_counts.items()}
+                    
+                    paths_dict[path_id] = {
+                        'original_path_id': i,
+                        'region': primary_region,
+                        'region_fractions': region_fractions,
+                        'coordinates': path_coords,
+                        'length': len(path_coords),
+                        'z_range': (float(z_coords.min()), float(z_coords.max()))
+                    }
+                    path_id += 1
+                    
+            except Exception as e:
+                self._log(f"Warning: Error processing path {i}: {str(e)}", level=1)
+                continue
         
-        self._log(f"Found {self.n_paths} vessel path segments across regions", level=2)
+        # Store the converted paths and update counts
+        self.paths = paths_dict
+        self.n_paths = len(paths_dict)
+        
+        self._log(f"Converted skeleton to dictionary with {self.n_paths} vessel paths", level=2)
+        if split_paths:
+            self._log("Paths split at region boundaries", level=2)
+        else:
+            self._log("Paths labeled with primary regions", level=2)
+            
         self._log("Path tracing complete", level=1, timing=time.time() - start_time)    
         return self.paths, self.stats
 
@@ -1212,29 +1255,62 @@ class VesselTracer:
         # Create vessel paths DataFrame if available
         if hasattr(self, 'paths'):
             vessel_paths_data = []
+            path_summary_data = []
+            
             for path_id, path_info in self.paths.items():
                 coords = path_info['coordinates']  # Already in ZXY format
                 region = path_info['region']
-                # Convert path coordinates to DataFrame rows
+                original_id = path_info.get('original_path_id', path_id)
+                length = path_info.get('length', len(coords))
+                
+                # Create summary entry for this path
+                summary_entry = {
+                    'Path_ID': path_id,
+                    'Original_Path_ID': original_id,
+                    'Primary_Region': region,
+                    'Path_Length': length,
+                    'Start_Z': coords[0][0] if len(coords) > 0 else None,
+                    'End_Z': coords[-1][0] if len(coords) > 0 else None,
+                }
+                
+                # Add region fractions if available (for non-split paths)
+                if 'region_fractions' in path_info:
+                    for region_name, fraction in path_info['region_fractions'].items():
+                        summary_entry[f'{region_name}_Fraction'] = fraction
+                        
+                # Add z-range if available
+                if 'z_range' in path_info:
+                    summary_entry['Z_Min'] = path_info['z_range'][0]
+                    summary_entry['Z_Max'] = path_info['z_range'][1]
+                    
+                path_summary_data.append(summary_entry)
+                
+                # Convert path coordinates to DataFrame rows (detailed view)
                 for i, coord in enumerate(coords):
                     vessel_paths_data.append({
                         'Path_ID': path_id,
-                        'Region': region,
+                        'Original_Path_ID': original_id,
+                        'Primary_Region': region,
                         'Point_Index': i,
                         'Z': coord[0],  # Z coordinate
                         'X': coord[1],  # X coordinate
-                        'Y': coord[2]   # Y coordinate
+                        'Y': coord[2],  # Y coordinate
+                        'Point_Region': self.get_region_for_z(coord[0])  # Region for this specific point
                     })
+                    
             self.paths_df = pd.DataFrame(vessel_paths_data)
+            self.path_summary_df = pd.DataFrame(path_summary_data)
         else:
             self.paths_df = pd.DataFrame()
+            self.path_summary_df = pd.DataFrame()
         
         # Store all DataFrames in a dictionary
         self.analysis_dfs = {
             'metadata': self.metadata_df,
             'regions': self.regions_df,
             'z_profile': self.z_profile_df,
-            'paths': self.paths_df
+            'paths': self.paths_df,
+            'path_summary': self.path_summary_df
         }
         
         return self.analysis_dfs
@@ -1260,4 +1336,6 @@ class VesselTracer:
             if not self.z_profile_df.empty:
                 self.z_profile_df.to_excel(writer, sheet_name='Z Profile', index=False)
             if not self.paths_df.empty:
-                self.paths_df.to_excel(writer, sheet_name='Vessel Paths', index=False)
+                self.paths_df.to_excel(writer, sheet_name='Vessel Paths Detailed', index=False)
+            if hasattr(self, 'path_summary_df') and not self.path_summary_df.empty:
+                self.path_summary_df.to_excel(writer, sheet_name='Vessel Paths Summary', index=False)
