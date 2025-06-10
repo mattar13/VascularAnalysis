@@ -25,7 +25,7 @@ def main(input_path, output_dir=None):
         tracer.activate_gpu()
         # Run the complete pipeline
         print("Running analysis pipeline...")
-        tracer.run_pipeline(
+        tracer.run_analysis(
             output_dir=output_dir,
             skip_smoothing=False,
             skip_binarization=False,
@@ -39,11 +39,14 @@ def main(input_path, output_dir=None):
             save_binary=True,
             save_separate=True,
         )
-        fig1, ax1 = plot_projections(tracer, mode='volume')
-        fig1.savefig(output_dir / "projections.png")
+        fig1, ax1 = plot_projections(tracer, mode='roi')
+        fig1.savefig(output_dir / "roi_projections.png")
 
-        fig2, ax2 = plot_projections(tracer, mode='background')
-        fig2.savefig(output_dir / "background_projections.png")
+        fig2, ax2 = plot_projections(tracer, mode='volume')
+        fig2.savefig(output_dir / "volume_projections.png")
+        
+        fig2b, ax2b = plot_projections(tracer, mode='region')
+        fig2b.savefig(output_dir / "region_projections.png")
 
         fig3, ax3 = plot_regions(tracer)
         fig3.savefig(output_dir / "regions.png")
@@ -82,5 +85,6 @@ def main(input_path, output_dir=None):
 
 if __name__ == "__main__":
     print("Starting VesselTracer...")
-    input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
+    #input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
+    input_path = Path("F:\\240207_002 (1).czi")
     main(input_path)
