@@ -1133,12 +1133,9 @@ class VesselTracer:
         
         # Clear ROI-specific computed results since they're no longer valid
         # Note: volume and paths are preserved, only ROI-specific results are cleared
-        for attr in ['roi', 'binary']:
+        for attr in ['roi', 'binary', 'region_map', 'paths']:
             if hasattr(self, attr):
                 delattr(self, attr)
-        print("Storing old paths as old paths")
-        self.old_paths = self.paths.copy()
-        self.paths = None
                 
         print("ROI updated. Next pipeline step will use new parameters.")
 
@@ -1365,6 +1362,7 @@ class VesselTracer:
         For each ROI position, runs the full analysis pipeline and stores results.
         Paths are preserved across ROI changes, and global coordinates are maintained.
         """
+        self.multiscan_results = []
         micron_roi = self.micron_roi
         # Calculate scan ranges based on volume dimensions and ROI size
         # Use average of X and Y pixel sizes for ROI conversion
@@ -1408,9 +1406,6 @@ class VesselTracer:
                 
                 # Generate analysis data
                 self.generate_analysis_dataframes()
-                
-                #Store the old paths here
-                new_paths = self.paths.copy()
 
                 # Convert local path coordinates to global coordinates
                 if hasattr(self, 'paths') and self.paths:
@@ -1430,13 +1425,12 @@ class VesselTracer:
                 # Store results with position info
                 roi_data = {
                     'center_x': x + pixel_roi//2,
+                    'min_x': x,
+                    'max_x': x + pixel_roi,
                     'center_y': y + pixel_roi//2,
-                    'roi_start_x': x,
-                    'roi_start_y': y,
-                    'metadata': self.metadata_df.copy(),
-                    'regions': self.regions_df.copy() if not self.regions_df.empty else None,
-                    'paths': self.paths_df.copy() if not self.paths_df.empty else None,
-                    'path_summary': self.path_summary_df.copy() if hasattr(self, 'path_summary_df') else None
+                    'min_y': y,
+                    'max_y': y + pixel_roi,
+                    'paths': self.paths.copy() if hasattr(self, 'paths') and self.paths else {}
                 }
                 roi_results.append(roi_data)
                 
