@@ -862,7 +862,55 @@ class VesselTracer:
             depth_vol[z] = self.binary[z] * z
             
         return depth_vol
+    
+    def create_region_map_volume(self) -> np.ndarray:
+        """Create a volume where each z-position is labeled with its region number.
         
+        Creates a 3D array the same size as the volume where each voxel is assigned
+        a region number based on its z-position:
+        - 0: Unknown/diving regions
+        - 1: Superficial
+        - 2: Intermediate  
+        - 3: Deep
+        
+        Returns:
+            np.ndarray: Volume with region labels (0-3) for each voxel
+        """
+        if not hasattr(self, 'region_bounds'):
+            self.determine_regions()
+        
+        # Create region map with same shape as volume
+        Z, Y, X = self.volume.shape
+        region_map = np.zeros((Z, Y, X), dtype=np.uint8)
+        
+        # Define region number mapping
+        region_numbers = {
+            'superficial': 1,
+            'intermediate': 2,
+            'deep': 3
+        }
+        
+        # Assign region numbers to each z-slice
+        for z in range(Z):
+            region_name = self.get_region_for_z(z)
+            region_number = region_numbers.get(region_name, 0)  # 0 for unknown
+            region_map[z, :, :] = region_number
+        
+        self.region_map = region_map
+        self._log(f"Created region map volume with shape {region_map.shape}", level=2)
+        self._log(f"Region assignments: 0=unknown, 1=superficial, 2=intermediate, 3=deep", level=2)
+        
+        # Log region statistics
+        unique_regions, counts = np.unique(region_map, return_counts=True)
+        total_voxels = region_map.size
+        for region_num, count in zip(unique_regions, counts):
+            region_names = {0: 'unknown', 1: 'superficial', 2: 'intermediate', 3: 'deep'}
+            region_name = region_names.get(region_num, f'region_{region_num}')
+            percentage = (count / total_voxels) * 100
+            self._log(f"  {region_name}: {count:,} voxels ({percentage:.1f}%)", level=2)
+        
+        return region_map
+
     def get_projection(self, axis: Union[int, List[int]], operation: str = 'mean', volume_type: str = 'binary') -> np.ndarray:
         """Generate a projection of the specified volume along specified axis/axes.
         
@@ -882,6 +930,7 @@ class VesselTracer:
                 - 'background': Background volume from median filtering
                 - 'volume': Current processed volume
                 - 'smoothed': Smoothed volume
+                - 'region_map': Region map volume with region labels
                 
         Returns:
             np.ndarray: Projected image
@@ -920,8 +969,12 @@ class VesselTracer:
             if not hasattr(self, 'smoothed'):
                 raise ValueError("Smoothed volume not available. Run smooth() first.")
             volume = self.smoothed
+        elif volume_type == 'region_map':
+            if not hasattr(self, 'region_map'):
+                raise ValueError("Region map volume not available. Run create_region_map_volume() first.")
+            volume = self.region_map
         else:
-            raise ValueError(f"volume_type must be one of ['binary', 'background', 'volume', 'smoothed']")
+            raise ValueError(f"volume_type must be one of ['binary', 'background', 'volume', 'smoothed', 'region_map']")
             
         # Get projection function
         proj_func = valid_ops[operation]
@@ -954,6 +1007,8 @@ class VesselTracer:
 
     #These are pipeline functions used to run the analysis
     def run_analysis(self,
+                    remove_dead_frames: bool = True,
+                    dead_frame_threshold: float = 1.5,
                     skip_smoothing: bool = False,
                     skip_binarization: bool = False,
                     skip_regions: bool = False, 
@@ -984,7 +1039,7 @@ class VesselTracer:
             
             self._log("1. Extracting ROI...", level=1)
             if self.find_roi:
-                self.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
+                self.segment_roi(remove_dead_frames=remove_dead_frames, dead_frame_threshold=dead_frame_threshold)
             #Determine and subtract the background
             self.median_filter()
             #self.background_smoothing()
@@ -1009,6 +1064,10 @@ class VesselTracer:
                     self._log(f"  Peak position: {peak:.1f}", level=2)
                     self._log(f"  Width (sigma): {sigma:.1f}", level=2)
                     self._log(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}", level=2)
+                
+                # Create region map volume
+                self._log("4b. Creating region map volume...", level=1)
+                self.create_region_map_volume()
             
             # Trace vessel paths
             self._log("5. Tracing vessel paths...", level=1)
@@ -1038,6 +1097,7 @@ class VesselTracer:
                     save_original: bool = True,
                     save_smoothed: bool = True,
                     save_binary: bool = True,
+                    save_region_map: bool = True,
                     save_separate: bool = False,
 
                     plot_projections: bool = True,
@@ -1052,11 +1112,9 @@ class VesselTracer:
             save_original: Whether to save the original volume
             save_smoothed: Whether to save the smoothed volume
             save_binary: Whether to save the binary volume
-            save_skeleton: Whether to save the skeleton volume
+            save_region_map: Whether to save the region map volume
             save_volumes: Whether to save any volumes
-            save_projections: Whether to save projections
-            save_regions: Whether to save region analysis
-            save_paths: Whether to save vessel paths
+            save_separate: Whether to save volumes separately
             skip_smoothing: Whether to skip the smoothing step
             skip_binarization: Whether to skip the binarization step
             skip_regions: Whether to skip the region detection step
@@ -1093,6 +1151,7 @@ class VesselTracer:
                 save_original=save_original,
                 save_smoothed=save_smoothed,
                 save_binary=save_binary,
+                save_region_map=save_region_map,
                 save_separate=save_separate
             )
             self._log("Pipeline complete!", level=1, timing=time.time() - start_time)
@@ -1120,7 +1179,7 @@ class VesselTracer:
             self.micron_roi = micron_roi
         
         # Clear computed results since they're no longer valid
-        for attr in ['volume', 'smoothed', 'binary', 'skeleton', 'stats', 'region_bounds']:
+        for attr in ['volume', 'smoothed', 'binary', 'skeleton', 'stats', 'region_bounds', 'region_map']:
             if hasattr(self, attr):
                 delattr(self, attr)
                 
@@ -1132,6 +1191,7 @@ class VesselTracer:
                    save_original: bool = True,
                    save_smoothed: bool = True,
                    save_binary: bool = True,
+                   save_region_map: bool = True,
                    save_separate: bool = False) -> None:
         """Save volume data as .tif files.
         
@@ -1140,6 +1200,7 @@ class VesselTracer:
             save_original: Whether to save the original ROI volume
             save_smoothed: Whether to save the smoothed volume
             save_binary: Whether to save the binary volume
+            save_region_map: Whether to save the region map volume
             save_separate: If True, saves each volume type as a separate file.
                           If False, saves all volumes in a single multi-channel file.
         """
@@ -1152,6 +1213,8 @@ class VesselTracer:
             self.smooth()
         if save_binary and not hasattr(self, 'binary'):
             self.binarize()
+        if save_region_map and not hasattr(self, 'region_map'):
+            self.create_region_map_volume()
             
         # Prepare volumes for saving
         volumes = []
@@ -1166,6 +1229,9 @@ class VesselTracer:
         if save_binary:
             volumes.append(self.binary.astype(np.uint8))  # Convert boolean to uint8
             volume_names.append('binary')
+        if save_region_map:
+            volumes.append(self.region_map)  # Already uint8
+            volume_names.append('region_map')
             
         if not volumes:
             print("No volumes selected for saving!")
@@ -1211,6 +1277,7 @@ class VesselTracer:
                 'Smoothing Applied',
                 'Binarization Applied',
                 'Region Detection Applied',
+                'Region Map Created',
                 'Volume Shape',
                 'Pixel Sizes (Z,Y,X)'
             ],
@@ -1222,6 +1289,7 @@ class VesselTracer:
                 hasattr(self, 'smoothed'),
                 hasattr(self, 'binary'),
                 hasattr(self, 'region_bounds'),
+                hasattr(self, 'region_map'),
                 str(self.volume.shape),
                 str(self.pixel_sizes)
             ]
@@ -1339,3 +1407,315 @@ class VesselTracer:
                 self.paths_df.to_excel(writer, sheet_name='Vessel Paths Detailed', index=False)
             if hasattr(self, 'path_summary_df') and not self.path_summary_df.empty:
                 self.path_summary_df.to_excel(writer, sheet_name='Vessel Paths Summary', index=False)
+
+    def multiscan(self,
+                  roi_centers: List[Tuple[int, int]],
+                  output_dir: Union[str, Path],
+                  micron_roi: Optional[float] = None,
+                  split_paths: bool = False,
+                  remove_dead_frames: bool = True,
+                  dead_frame_threshold: float = 1.5,
+                  skip_smoothing: bool = False,
+                  skip_binarization: bool = False,
+                  skip_regions: bool = False,
+                  skip_trace: bool = False,
+                  save_individual_results: bool = True,
+                  save_combined_results: bool = True) -> Dict[str, Any]:
+        """Perform sequential scanning across multiple regions of interest.
+        
+        This function processes multiple ROIs in sequence, accumulating vessel path
+        information across all regions. Each ROI is analyzed independently and then
+        the results are combined. Local ROI coordinates are converted to global 
+        image coordinates by adding the ROI's starting position.
+        
+        Args:
+            roi_centers: List of (center_x, center_y) tuples defining ROI positions
+            output_dir: Directory to save outputs
+            micron_roi: Optional ROI size in microns. If None, uses current config value
+            split_paths: Whether to split paths at region boundaries
+            remove_dead_frames: Whether to remove dead frames during ROI extraction
+            dead_frame_threshold: Threshold for dead frame removal
+            skip_smoothing: Whether to skip the smoothing step
+            skip_binarization: Whether to skip the binarization step
+            skip_regions: Whether to skip the region detection step
+            skip_trace: Whether to skip the trace step
+            save_individual_results: Whether to save results for each individual ROI
+            save_combined_results: Whether to save combined results across all ROIs
+            
+        Returns:
+            Dictionary containing combined results from all ROIs
+        """
+        start_time = time.time()
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        self._log(f"Starting multiscan across {len(roi_centers)} ROIs...", level=1)
+        self._log(f"Output directory: {output_dir}", level=2)
+        
+        # Store original ROI settings to restore later
+        original_center_x = self.center_x
+        original_center_y = self.center_y
+        original_micron_roi = self.micron_roi
+        original_find_roi = self.find_roi
+        
+        # Enable ROI finding for multiscan
+        self.find_roi = True
+        roi_size_microns = micron_roi if micron_roi is not None else self.micron_roi
+        if micron_roi is not None:
+            self.micron_roi = micron_roi
+            
+        # Initialize combined results storage
+        combined_paths = {}
+        combined_regions = {}
+        combined_metadata = []
+        roi_results = []
+        global_path_id = 1
+        
+        try:
+            for roi_idx, (center_x, center_y) in enumerate(roi_centers):
+                self._log(f"\nProcessing ROI {roi_idx + 1}/{len(roi_centers)} at ({center_x}, {center_y})", level=1)
+                
+                # Update ROI position
+                self.center_x = center_x
+                self.center_y = center_y
+                
+                # Clear previous results to force recomputation
+                for attr in ['volume', 'smoothed', 'binary', 'background', 'paths', 'stats', 'region_bounds', 'region_map']:
+                    if hasattr(self, attr):
+                        delattr(self, attr)
+                
+                # Reload the original volume for this ROI
+                self._load_image()
+                
+                try:
+                    # Run analysis for this ROI
+                    self.run_analysis(
+                        remove_dead_frames=remove_dead_frames,
+                        dead_frame_threshold=dead_frame_threshold,
+                        skip_smoothing=skip_smoothing,
+                        skip_binarization=skip_binarization,
+                        skip_regions=skip_regions,
+                        skip_trace=skip_trace
+                    )
+                    
+                    if not skip_trace:
+                        # Trace paths for this ROI
+                        self.trace_paths(split_paths=split_paths)
+                        
+                        # Collect results from this ROI
+                        roi_result = {
+                            'roi_index': roi_idx,
+                            'center_x': center_x,
+                            'center_y': center_y,
+                            'n_paths': self.n_paths,
+                            'paths': self.paths.copy() if hasattr(self, 'paths') else {},
+                            'regions': self.region_bounds.copy() if hasattr(self, 'region_bounds') else {},
+                            'volume_shape': self.volume.shape if hasattr(self, 'volume') else None
+                        }
+                        roi_results.append(roi_result)
+                        
+                        # Convert local ROI coordinates to global image coordinates
+                        if hasattr(self, 'paths'):
+                            # Calculate ROI offset for coordinate conversion
+                            roi_size_pixels_x = int(roi_size_microns / self.pixel_size_x)
+                            roi_size_pixels_y = int(roi_size_microns / self.pixel_size_y)
+                            half_roi_x = roi_size_pixels_x // 2
+                            half_roi_y = roi_size_pixels_y // 2
+                            roi_start_x = center_x - half_roi_x
+                            roi_start_y = center_y - half_roi_y
+                            
+                            self._log(f"  ROI start position: ({roi_start_x}, {roi_start_y})", level=2)
+                            
+                            for local_path_id, path_info in self.paths.items():
+                                # Copy path info and add ROI metadata
+                                combined_path_info = path_info.copy()
+                                combined_path_info['roi_index'] = roi_idx
+                                combined_path_info['roi_center'] = (center_x, center_y)
+                                combined_path_info['roi_start'] = (roi_start_x, roi_start_y)
+                                combined_path_info['local_path_id'] = local_path_id
+                                
+                                # Convert coordinates from local ROI to global image coordinates
+                                local_coords = path_info['coordinates']
+                                global_coords = local_coords.copy()
+                                
+                                # Add ROI offset to x and y coordinates (z remains the same)
+                                global_coords[:, 1] += roi_start_x  # X coordinate
+                                global_coords[:, 2] += roi_start_y  # Y coordinate
+                                
+                                combined_path_info['coordinates'] = global_coords
+                                combined_path_info['local_coordinates'] = local_coords
+                                
+                                combined_paths[global_path_id] = combined_path_info
+                                global_path_id += 1
+                        
+                        # Add region information
+                        if hasattr(self, 'region_bounds'):
+                            combined_regions[f'roi_{roi_idx}'] = {
+                                'center': (center_x, center_y),
+                                'regions': self.region_bounds.copy()
+                            }
+                        
+                        # Add metadata for this ROI
+                        combined_metadata.append({
+                            'roi_index': roi_idx,
+                            'center_x': center_x,
+                            'center_y': center_y,
+                            'volume_shape': str(self.volume.shape) if hasattr(self, 'volume') else 'N/A',
+                            'n_paths': self.n_paths,
+                            'n_regions': len(self.region_bounds) if hasattr(self, 'region_bounds') else 0
+                        })
+                        
+                        self._log(f"ROI {roi_idx + 1} complete: {self.n_paths} paths found", level=2)
+                    
+                    # Save individual ROI results if requested
+                    if save_individual_results:
+                        roi_output_dir = output_dir / f'roi_{roi_idx:03d}_x{center_x}_y{center_y}'
+                        roi_output_dir.mkdir(exist_ok=True)
+                        
+                        # Generate and save DataFrames for this ROI
+                        self.generate_analysis_dataframes()
+                        excel_path = roi_output_dir / f'roi_{roi_idx:03d}_analysis.xlsx'
+                        self.save_analysis_to_excel(excel_path)
+                        
+                        # Save volumes for this ROI
+                        self.save_volume(
+                            roi_output_dir,
+                            save_original=True,
+                            save_smoothed=True,
+                            save_binary=True,
+                            save_region_map=True,
+                            save_separate=False
+                        )
+                    
+                except Exception as e:
+                    self._log(f"Error processing ROI {roi_idx + 1} at ({center_x}, {center_y}): {str(e)}", level=1)
+                    continue
+            
+            # Create combined results
+            combined_results = {
+                'roi_centers': roi_centers,
+                'combined_paths': combined_paths,
+                'combined_regions': combined_regions,
+                'roi_results': roi_results,
+                'metadata': combined_metadata,
+                'total_paths': len(combined_paths),
+                'total_rois': len(roi_centers),
+                'processing_time': time.time() - start_time
+            }
+            
+            # Save combined results if requested
+            if save_combined_results:
+                self._log("Saving combined multiscan results...", level=1)
+                self._save_multiscan_results(combined_results, output_dir)
+            
+            self._log(f"\nMultiscan complete!", level=1)
+            self._log(f"Processed {len(roi_centers)} ROIs", level=1)
+            self._log(f"Total paths found: {len(combined_paths)}", level=1)
+            self._log(f"Total processing time: {time.time() - start_time:.2f}s", level=1)
+            
+            return combined_results
+            
+        finally:
+            # Restore original ROI settings
+            self.center_x = original_center_x
+            self.center_y = original_center_y
+            self.micron_roi = original_micron_roi
+            self.find_roi = original_find_roi
+            
+            # Clear any remaining analysis results to avoid confusion
+            for attr in ['volume', 'smoothed', 'binary', 'background', 'paths', 'stats', 'region_bounds', 'region_map']:
+                if hasattr(self, attr):
+                    delattr(self, attr)
+
+    def _save_multiscan_results(self, combined_results: Dict[str, Any], output_dir: Path) -> None:
+        """Save combined multiscan results to files.
+        
+        Args:
+            combined_results: Dictionary containing all combined results
+            output_dir: Directory to save the results
+        """
+        import json
+        
+        # Save metadata as JSON
+        metadata_file = output_dir / 'multiscan_metadata.json'
+        metadata = {
+            'roi_centers': combined_results['roi_centers'],
+            'total_paths': combined_results['total_paths'],
+            'total_rois': combined_results['total_rois'],
+            'processing_time': combined_results['processing_time'],
+            'metadata': combined_results['metadata']
+        }
+        
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        # Create combined DataFrames
+        combined_paths_data = []
+        combined_summary_data = []
+        
+        for global_path_id, path_info in combined_results['combined_paths'].items():
+            coords = path_info['coordinates']  # These are now global coordinates
+            local_coords = path_info.get('local_coordinates', coords)
+            region = path_info['region']
+            roi_idx = path_info['roi_index']
+            roi_center = path_info['roi_center']
+            roi_start = path_info.get('roi_start', (None, None))
+            local_path_id = path_info['local_path_id']
+            
+            # Summary data
+            summary_entry = {
+                'Global_Path_ID': global_path_id,
+                'Local_Path_ID': local_path_id,
+                'ROI_Index': roi_idx,
+                'ROI_Center_X': roi_center[0],
+                'ROI_Center_Y': roi_center[1],
+                'ROI_Start_X': roi_start[0],
+                'ROI_Start_Y': roi_start[1],
+                'Primary_Region': region,
+                'Path_Length': len(coords),
+                'Start_Z': coords[0][0] if len(coords) > 0 else None,
+                'End_Z': coords[-1][0] if len(coords) > 0 else None,
+                'Start_X_Global': coords[0][1] if len(coords) > 0 else None,
+                'Start_Y_Global': coords[0][2] if len(coords) > 0 else None,
+                'End_X_Global': coords[-1][1] if len(coords) > 0 else None,
+                'End_Y_Global': coords[-1][2] if len(coords) > 0 else None,
+            }
+            
+            # Add region fractions if available
+            if 'region_fractions' in path_info:
+                for region_name, fraction in path_info['region_fractions'].items():
+                    summary_entry[f'{region_name}_Fraction'] = fraction
+            
+            combined_summary_data.append(summary_entry)
+            
+            # Detailed coordinate data
+            for i, coord in enumerate(coords):
+                combined_paths_data.append({
+                    'Global_Path_ID': global_path_id,
+                    'Local_Path_ID': local_path_id,
+                    'ROI_Index': roi_idx,
+                    'ROI_Center_X': roi_center[0],
+                    'ROI_Center_Y': roi_center[1],
+                    'ROI_Start_X': roi_start[0],
+                    'ROI_Start_Y': roi_start[1],
+                    'Primary_Region': region,
+                    'Point_Index': i,
+                    'Z': coord[0],
+                    'X_Global': coord[1],  # Global coordinates
+                    'Y_Global': coord[2],  # Global coordinates
+                })
+        
+        # Create DataFrames
+        combined_paths_df = pd.DataFrame(combined_paths_data)
+        combined_summary_df = pd.DataFrame(combined_summary_data)
+        roi_metadata_df = pd.DataFrame(combined_results['metadata'])
+        
+        # Save to Excel
+        excel_path = output_dir / 'multiscan_combined_results.xlsx'
+        with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+            roi_metadata_df.to_excel(writer, sheet_name='ROI Metadata', index=False)
+            combined_summary_df.to_excel(writer, sheet_name='Combined Paths Summary', index=False)
+            combined_paths_df.to_excel(writer, sheet_name='Combined Paths Detailed', index=False)
+        
+        self._log(f"Combined results saved to {excel_path}", level=2)
+        self._log(f"Metadata saved to {metadata_file}", level=2)
