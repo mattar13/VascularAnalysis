@@ -36,11 +36,10 @@ def main(input_path, output_dir=None):
             #Save options
             save_volumes=True,
             save_original=True,
-            save_smoothed=True,
             save_binary=True,
             save_separate=True,
         )
-        fig1, ax1 = plot_projections(tracer, mode='smoothed')
+        fig1, ax1 = plot_projections(tracer, mode='volume')
         fig1.savefig(output_dir / "projections.png")
 
         fig2, ax2 = plot_projections(tracer, mode='background')
