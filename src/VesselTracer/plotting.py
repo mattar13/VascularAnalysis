@@ -28,7 +28,6 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
         tracer: VesselTracer instance with loaded data
         figsize: Figure size tuple (width, height)
         mode: Visualization mode. Options:
-            - 'smoothed': Show smoothed volume
             - 'binary': Show binary volume  
             - 'background': Show background volume from median filtering
             - 'volume': Show current processed volume
@@ -39,16 +38,12 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
         Tuple of (figure, dict of axes)
     """
     # Validate mode
-    valid_modes = ['smoothed', 'binary', 'background', 'volume']
+    valid_modes = ['binary', 'background', 'volume']
     if mode not in valid_modes:
         raise ValueError(f"Mode must be one of {valid_modes}")
     
     # Ensure required data exists and get data based on mode
-    if mode == 'smoothed':
-        if not hasattr(tracer, 'smoothed'):
-            tracer.smooth()
-        data = tracer.smoothed
-    elif mode == 'binary':
+    if mode == 'binary':
         if not hasattr(tracer, 'binary'):
             tracer.binarize()
         data = tracer.binary
@@ -282,7 +277,6 @@ def plot_projections_w_paths(tracer, figsize=(10, 10), mode: str = 'smoothed', d
         tracer: VesselTracer instance with loaded data
         figsize: Figure size tuple (width, height)
         mode: Visualization mode. Options:
-            - 'smoothed': Show smoothed volume
             - 'binary': Show binary volume  
             - 'background': Show background volume from median filtering
             - 'volume': Show current processed volume
@@ -324,7 +318,7 @@ def plot_regions(tracer, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.Axes
     """
     # Get mean z-profile and y-projection
     mean_zprofile = tracer.get_projection([1, 2], operation='mean')
-    y_proj = np.max(tracer.smoothed if hasattr(tracer, 'smoothed') else tracer.roi_volume, axis=2)
+    y_proj = np.max(tracer.volume, axis=2)
     
     # Determine regions if not already done
     if not hasattr(tracer, 'region_bounds'):
