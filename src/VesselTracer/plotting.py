@@ -27,7 +27,11 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
     Args:
         tracer: VesselTracer instance with loaded data
         figsize: Figure size tuple (width, height)
-        mode: Visualization mode, either 'smoothed' or 'binary'
+        mode: Visualization mode. Options:
+            - 'volume': Show original volume (global)
+            - 'roi': Show ROI data (local, processed)
+            - 'binary': Show binary vessel volume
+            - 'region': Show region map with color-coded regions
         depth_coded: If True, creates depth-coded projections where intensity
                     represents z-position (only works with binary mode)
         
@@ -35,14 +39,25 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
         Tuple of (figure, dict of axes)
     """
     # Validate mode
-    if mode not in ['smoothed', 'binary']:
-        raise ValueError("Mode must be either 'smoothed' or 'binary'")
+    valid_modes = ['volume', 'roi', 'binary', 'region']
+    if mode not in valid_modes:
+        raise ValueError(f"Mode must be one of {valid_modes}")
     
-    # Ensure required data exists
-    if mode == 'smoothed' and not hasattr(tracer, 'smoothed'):
-        tracer.smooth()
-    elif mode == 'binary' and not hasattr(tracer, 'binary'):
-        tracer.binarize()
+    # Ensure required data exists and get data based on mode
+    if mode == 'volume':
+        data = tracer.volume
+    elif mode == 'roi':
+        if not hasattr(tracer, 'roi') or tracer.roi is None:
+            raise ValueError("ROI data not available. Run segment_roi() first.")
+        data = tracer.roi
+    elif mode == 'binary':
+        if not hasattr(tracer, 'binary'):
+            tracer.binarize()
+        data = tracer.binary
+    elif mode == 'region':
+        if not hasattr(tracer, 'region_map'):
+            tracer.create_region_map_volume()
+        data = tracer.region_map
     
     # Create figure with gridspec
     fig = plt.figure(figsize=figsize)
@@ -53,9 +68,6 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
     ax_y = fig.add_subplot(gs[0, 1])  # Y projection (top right)
     ax_x = fig.add_subplot(gs[1, 0])  # X projection (bottom left)
     ax_profile = fig.add_subplot(gs[1, 1])  # Intensity profile (bottom right)
-    
-    # Get data based on mode
-    data = tracer.smoothed if mode == 'smoothed' else tracer.binary
     
     if depth_coded and mode == 'binary':
         # Create depth-coded volume
@@ -81,7 +93,13 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
         z_proj = np.max(data, axis=0)
         y_proj = np.max(data, axis=1)
         x_proj = np.max(data, axis=2)
-        cmap = 'gray'
+        
+        # Choose colormap based on mode
+        if mode == 'region':
+            # Use a discrete colormap for regions
+            cmap = plt.cm.Set1  # Good for discrete categorical data
+        else:
+            cmap = 'gray'
     
     # Plot Z projection (top left)
     im_z = ax_z.imshow(z_proj, cmap=cmap)
@@ -130,7 +148,9 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_cod
     
     return fig, axes
 
-def plot_paths_on_axis(tracer, ax, projection='xy', region_colorcode: bool = False, paths_to_plot: Optional[Dict] = None, invert_yaxis: bool = True) -> None:
+def plot_paths_on_axis(tracer, ax, 
+                       projection='xy', region_colorcode: bool = False, is_3d: bool = False, 
+                       linedwith = 5, alpha = 0.8) -> None:
     """Plot vessel paths on a given axis.
     
     Args:
@@ -194,20 +214,16 @@ def plot_paths_on_axis(tracer, ax, projection='xy', region_colorcode: bool = Fal
                     region = unique_regions[0]
                     color = region_colors[region]
                 
-                if projection == 'xyz':
-                    ax.plot(plot_x, plot_y, plot_z, color=color, linewidth=1, alpha=0.7)
+                if is_3d:
+                    ax.plot(plot_x, plot_y, plot_z, color=color, linewidth=linedwith, alpha=alpha)
                 else:
-                    ax.plot(plot_x, plot_y, color=color, linewidth=1, alpha=0.7)
+                    ax.plot(plot_x, plot_y, color=color, linewidth=linedwith, alpha=alpha)
             else:
                 # Plot entire path in red
-                if projection == 'xyz':
-                    ax.plot(plot_x, plot_y, plot_z, 'r-', linewidth=1, alpha=0.7)
+                if is_3d:
+                    ax.plot(plot_x, plot_y, plot_z, 'r-', linewidth=linedwith, alpha=alpha)
                 else:
-                    ax.plot(plot_x, plot_y, 'r-', linewidth=1, alpha=0.7)
-    
-    # Set axis orientation to match imshow (top-left origin)
-    if invert_yaxis and projection != 'xyz':
-        ax.invert_yaxis()
+                    ax.plot(plot_x, plot_y, 'r-', linewidth=linedwith, alpha=alpha)
 
 def plot_paths(tracer, figsize=(15, 7), region_colorcode: bool = False, projection: str = 'xy') -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Plot vessel paths in both 2D and 3D projections.
@@ -267,7 +283,11 @@ def plot_projections_w_paths(tracer, figsize=(10, 10), mode: str = 'smoothed', d
     Args:
         tracer: VesselTracer instance with loaded data
         figsize: Figure size tuple (width, height)
-        mode: Visualization mode, either 'smoothed' or 'binary'
+        mode: Visualization mode. Options:
+            - 'volume': Show original volume (global)
+            - 'roi': Show ROI data (local, processed)
+            - 'binary': Show binary vessel volume
+            - 'region': Show region map with color-coded regions
         depth_coded: If True, creates depth-coded projections where intensity
                     represents z-position (only works with binary mode)
         region_colorcode: If True, color-code paths based on their region
@@ -307,7 +327,9 @@ def plot_regions(tracer, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.Axes
     """
     # Get mean z-profile and y-projection
     mean_zprofile = tracer.get_projection([1, 2], operation='mean')
-    y_proj = np.max(tracer.smoothed if hasattr(tracer, 'smoothed') else tracer.roi_volume, axis=2)
+    # Use ROI if available, otherwise use volume
+    data_to_project = tracer.roi if hasattr(tracer, 'roi') and tracer.roi is not None else tracer.volume
+    y_proj = np.max(data_to_project, axis=2)
     
     # Determine regions if not already done
     if not hasattr(tracer, 'region_bounds'):
@@ -357,134 +379,4 @@ def plot_regions(tracer, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.Axes
     
     return fig, axes
 
-def plot_layer_projections(tracer, figsize=(15, 10), mode: str = 'binary', depth_coded: bool = False, region_colorcode: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
-    """Create a plot showing layer-specific projections and their paths.
-    
-    Args:
-        tracer: VesselTracer instance with traced paths
-        figsize: Figure size tuple (width, height)
-        mode: Visualization mode ('smoothed' or 'binary')
-        depth_coded: If True, creates depth-coded projections
-        region_colorcode: If True, color-code paths based on their region
-        
-    Returns:
-        Tuple of (figure, dict of axes)
-    """
-    if not hasattr(tracer, 'region_bounds'):
-        raise ValueError("No region bounds found. Run determine_regions() first.")
-    
-    # Create figure with 3x2 grid
-    fig = plt.figure(figsize=figsize)
-    gs = plt.GridSpec(3, 2, height_ratios=[1, 1, 1])
-    
-    # Create axes for each layer
-    axes = {}
-    for i, region in enumerate(tracer.regions):
-        # Left column: Projections
-        ax_proj = fig.add_subplot(gs[i, 0])
-        axes[f'{region}_proj'] = ax_proj
-        
-        # Right column: Paths
-        ax_paths = fig.add_subplot(gs[i, 1])
-        axes[f'{region}_paths'] = ax_paths
-    
-    # Get region bounds
-    region_bounds = tracer.region_bounds
-    
-    # Plot projections and paths for each layer
-    for region in tracer.regions:
-        ax_proj = axes[f'{region}_proj']
-        ax_paths = axes[f'{region}_paths']
-        
-        # Get z-bounds for this layer
-        _, _, (z_min, z_max) = region_bounds[region]
-        
-        # Create projection for this layer
-        if mode == 'smoothed':
-            if not hasattr(tracer, 'smoothed'):
-                raise ValueError("No smoothed volume found. Run smooth() first.")
-            # Average the smoothed volume within the layer bounds
-            layer_data = tracer.smoothed[int(z_min):int(z_max)]
-            projection = np.mean(layer_data, axis=0)
-            ax_proj.imshow(projection, cmap='gray')
-        else:  # binary mode
-            if not hasattr(tracer, 'binary'):
-                raise ValueError("No binary volume found. Run binarize() first.")
-            # Get binary projection for this layer
-            projection = tracer.get_projection([1, 2], operation='max', 
-                                            zrng=(int(z_min), int(z_max)))
-            if depth_coded:
-                # Create depth-coded projection
-                depth_vol = tracer.get_depth_volume()
-                depth_proj = np.max(depth_vol[int(z_min):int(z_max)], axis=0)
-                # Normalize depth values to [0,1] for this layer
-                depth_proj = (depth_proj - z_min) / (z_max - z_min)
-                # Create RGB image with depth coding
-                rgb = np.zeros((*projection.shape, 3))
-                rgb[..., 0] = projection  # Red channel for binary
-                rgb[..., 1] = depth_proj  # Green channel for depth
-                ax_proj.imshow(rgb)
-            else:
-                ax_proj.imshow(projection, cmap='gray')
-        
-        # Plot all paths that pass through this layer
-        if hasattr(tracer, 'paths'):
-            for path_id, path in tracer.paths.items():
-                path_coords = path['coordinates']
-                z_coords = path_coords[:, 0]  # z is first coordinate
-                
-                # Check if path passes through this layer
-                if np.any((z_coords >= z_min) & (z_coords <= z_max)):
-                    # Get the points that are within this layer
-                    mask = (z_coords >= z_min) & (z_coords <= z_max)
-                    layer_coords = path_coords[mask]
-                    
-                    if len(layer_coords) > 1:  # Only plot if we have at least 2 points
-                        x_coords = layer_coords[:, 2]  # x is third coordinate
-                        y_coords = layer_coords[:, 1]  # y is second coordinate
-                        
-                        if region_colorcode:
-                            # Get the region for each point
-                            regions = [tracer.get_region_for_z(z) for z in layer_coords[:, 0]]
-                            unique_regions = np.unique(regions)
-                            
-                            if len(unique_regions) > 1 or unique_regions[0] == 'unknown':
-                                # Plot as diving vessel if path crosses multiple regions
-                                color = 'magenta'
-                            else:
-                                # Plot in the color of its single region
-                                region = unique_regions[0]
-                                color = {
-                                    'superficial': 'tab:purple',
-                                    'intermediate': 'tab:red',
-                                    'deep': 'tab:blue'
-                                }.get(region, 'gray')
-                            
-                            ax_paths.plot(x_coords, y_coords, color=color, linewidth=1, alpha=0.7)
-                        else:
-                            # Plot entire path in red
-                            ax_paths.plot(x_coords, y_coords, 'r-', linewidth=1, alpha=0.7)
-        
-        # Set titles and labels
-        ax_proj.set_title(f'{region.capitalize()} Layer Projection')
-        ax_paths.set_title(f'{region.capitalize()} Layer Paths')
-        
-        # Invert y-axis to match imshow orientation
-        ax_proj.invert_yaxis()
-        ax_paths.invert_yaxis()
-    
-    # Add legend if using region colorcoding
-    if region_colorcode:
-        region_colors = {
-            'superficial': 'tab:purple',
-            'intermediate': 'tab:red',
-            'deep': 'tab:blue',
-            'diving': 'magenta'
-        }
-        handles = [plt.Line2D([0], [0], color=color, label=region) 
-                  for region, color in region_colors.items()]
-        fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.02),
-                  ncol=4, title='Regions')
-    
-    plt.tight_layout()
-    return fig, axes
+

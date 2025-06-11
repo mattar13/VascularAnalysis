@@ -34,13 +34,22 @@ class VesselTracer:
         config_path: Optional path to YAML config file. If None, uses default config.
         pixel_sizes: Optional tuple of (z,y,x) pixel sizes in microns. Defaults to (1.0, 1.0, 1.0).
     """
-    input_data: Union[str, Path, np.ndarray]
-    config_path: Optional[Union[str, Path]] = None
-    pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)
-    
+      
     #Initialize the class and load image and config
-    def __post_init__(self):
-        """Initialize after dataclass creation."""
+    def __init__(self, input_data: Union[str, Path, np.ndarray],
+                 config_path: Optional[Union[str, Path]] = None,
+                 pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)):
+        """Initialize VesselTracer with input data and configuration.
+        
+        Args:
+            input_data: Either a path to a CZI/TIF file (as string or Path object) or a 3D numpy array
+            config_path: Optional path to YAML config file. If None, uses default config
+            pixel_sizes: Tuple of (z,y,x) pixel sizes in microns. Defaults to (1.0, 1.0, 1.0)
+        """
+        self.input_data = input_data
+        self.config_path = config_path
+        self.pixel_sizes = pixel_sizes
+        
         # Convert string paths to Path objects
         if isinstance(self.input_data, str):
             self.input_data = Path(self.input_data)
@@ -50,11 +59,36 @@ class VesselTracer:
         # Initialize GPU mode as disabled
         self.gpu_available = GPU_AVAILABLE
         self.use_gpu = False
-            
+        
+        # Initialize other attributes
+        self.volume = None
+        self.find_roi = None
+        self.micron_roi = None
+        self.center_x = None
+        self.center_y = None
+        self.scalebar_length = None
+        self.scalebar_x = None
+        self.scalebar_y = None
+        self.micron_gauss_sigma = None
+        self.micron_background_sigma = None
+        self.micron_median_filter_size = None
+        self.micron_close_radius = None
+        self.gauss_sigma_x = None
+        self.gauss_sigma_y = None
+        self.gauss_sigma_z = None
+        self.background_sigma_x = None
+        self.background_sigma_y = None
+        
+        # Load config and image
         self._load_config()
         self._load_image()
         self.volume = self.volume.astype("float32")
-        
+
+        # Initialize image volumes
+        self.background = None
+        self.roi = None
+        self.binary = None
+    
     def _load_config(self):
         """Load configuration from YAML file."""
         if self.config_path is None:
@@ -347,7 +381,7 @@ class VesselTracer:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
             
         self._log(f"Configuration saved to {output_path}", level=1)
-
+    
     #Now we can start the functions used to process the images 
     def normalize_image(self) -> np.ndarray:
         """Normalize image to [0,1] range."""
@@ -378,7 +412,8 @@ class VesselTracer:
         if not self.find_roi:
             self._log("Using entire volume (ROI finding disabled)", level=2)
             self.valid_frame_range = (0, self.volume.shape[0]-1)
-            return self.volume
+            self.roi = self.volume.copy()
+            return self.roi
         else:
             # Convert ROI size from microns to pixels
             h_x = round(self.micron_roi/2 * 1/self.pixel_size_x)
@@ -419,75 +454,58 @@ class VesselTracer:
                     self.valid_frame_range = (0, len(z_profile)-1)
             else:
                 self.valid_frame_range = (0, roi.shape[0]-1)
-            self.volume = roi
+            self.roi = roi
             self._log(f"ROI extraction complete. Final shape: {roi.shape}", level=2)
             self._log("ROI extraction complete", level=1, timing=time.time() - start_time)
-            return self.volume
+            return self.roi
     
     def median_filter(self) -> np.ndarray:
-        """Apply median filter to volume."""
+        """Apply median filter for background subtraction.
+        
+        Creates a background image using median filtering and subtracts it from 
+        the original image. This technique is commonly used for background 
+        correction in microscopy images.
+        """
         start_time = time.time()
-        self._log("Applying median filter...", level=1)
+        self._log("Applying median filter for background subtraction...", level=1)
         
         if self.find_roi and not hasattr(self, 'valid_frame_range'): 
             self.segment_roi()
             
+        self._log(f"Median filter size: {self.median_filter_size} pixels", level=2)
+        
+        # Store original ROI before processing
+        original_roi = self.roi.copy()
+        
         if self.use_gpu and GPU_AVAILABLE:
             self._log("Using GPU acceleration for median filtering", level=2)
             # Convert to GPU array
-            gpu_volume = cp.asarray(self.volume)
+            gpu_roi = cp.asarray(self.roi)
             
-            # Apply median filter on GPU
-            gpu_filtered = cp_ndimage.median_filter(gpu_volume, size=self.median_filter_size)
+            # Create background image using median filter
+            gpu_background = cp_ndimage.median_filter(gpu_roi, size=self.median_filter_size)
+            
+            # Subtract background from original
+            gpu_corrected = gpu_roi - gpu_background
             
             # Convert back to CPU
-            self.volume = cp.asnumpy(gpu_filtered)
+            background_image = cp.asnumpy(gpu_background)
+            self.roi = cp.asnumpy(gpu_corrected)
         else:
-            self.volume = median_filter(self.volume, size=self.median_filter_size)
+            # Create background image using median filter
+            background_image = median_filter(self.roi, size=self.median_filter_size)
+            
+            # Subtract background from original
+            self.roi = original_roi - background_image
         
-        self._log("Median filter complete", level=1, timing=time.time() - start_time)
-        return self.volume
+        # Store the background image for reference
+        self.background = background_image
+        
+        self._log("Median filter background subtraction complete", level=1, timing=time.time() - start_time)
+        self._log(f"Background subtracted ROI range: [{self.roi.min():.3f}, {self.roi.max():.3f}]", level=2)
+        
+        return self.roi
     
-    def background_smoothing(self, epsilon = 1e-6, mode = 'gaussian') -> np.ndarray:
-        """Apply background smoothing to volume with proper handling of anisotropic voxels.
-        
-        This is used to estimate and remove the background intensity variation.
-        Uses a larger smoothing kernel than regular smoothing.
-        """
-        start_time = time.time()
-        self._log(f"Applying background smoothing with {mode}...", level=1)
-        self._log(f"Using background sigma (pixels):", level=2)
-        self._log(f"  X: {self.background_sigma_x:.1f}", level=2)
-        self._log(f"  Y: {self.background_sigma_y:.1f}", level=2)
-        self._log(f"  Z: {self.background_sigma_z:.1f}", level=2)
-        self.unfiltered_volume = self.volume.copy()
-        
-        if self.use_gpu and GPU_AVAILABLE:
-            self._log("Using GPU acceleration for background smoothing", level=2)
-            # Convert to GPU array
-            gpu_volume = cp.asarray(self.volume)
-            
-            if mode == 'gaussian':
-                background_smooth = cp_ndimage.gaussian_filter(gpu_volume, sigma=self.background_sigma)
-            elif mode == 'median':
-                # For median filter, we still use the same size in all dimensions
-                # since it's a discrete operation
-                background_smooth = cp_ndimage.median_filter(gpu_volume, size=self.median_filter_size)
-            
-            # Convert back to CPU
-            background_smooth = cp.asnumpy(background_smooth)
-        else:
-            if mode == 'gaussian':
-                background_smooth = gaussian_filter(self.volume, sigma=self.background_sigma)
-            elif mode == 'median':
-                # For median filter, we still use the same size in all dimensions
-                # since it's a discrete operation
-                background_smooth = median_filter(self.volume, size=self.median_filter_size)
-        
-        self._log("Background smoothing complete", level=1, timing=time.time() - start_time)
-        self.volume = self.volume / (epsilon + background_smooth)
-        return self.volume
-
     def detrend(self) -> np.ndarray:
         """Remove linear trend from volume along z-axis.
         
@@ -505,10 +523,10 @@ class VesselTracer:
         if self.find_roi and not hasattr(self, 'valid_frame_range'):
             self.segment_roi()
             
-        Z, Y, X = self.volume.shape
+        Z, Y, X = self.roi.shape
         
         # Calculate mean intensity profile
-        z_profile = np.mean(self.volume, axis=(1,2))
+        z_profile = np.mean(self.roi, axis=(1,2))
         z_positions = np.arange(Z)
         
         # Fit linear trend
@@ -521,16 +539,16 @@ class VesselTracer:
         correction = trend / np.mean(trend)
         
         # Apply correction to each z-slice
-        detrended = np.zeros_like(self.volume)
+        detrended = np.zeros_like(self.roi)
         for z in range(Z):
-            detrended[z] = self.volume[z] / correction[z]
+            detrended[z] = self.roi[z] / correction[z]
             
         # Normalize to [0,1] range
-        self.unfiltered_volume = self.volume.copy()
-        self.volume = detrended
+        self.unfiltered_roi = self.roi.copy()
+        self.roi = detrended
         
         self._log("Detrending complete", level=1, timing=time.time() - start_time)
-        return self.volume
+        return self.roi
 
     def smooth(self) -> np.ndarray:
         """Apply regular Gaussian smoothing to volume with proper handling of anisotropic voxels.
@@ -552,19 +570,19 @@ class VesselTracer:
         if self.use_gpu and GPU_AVAILABLE:
             self._log("Using GPU acceleration for smoothing", level=2)
             # Convert to GPU array
-            gpu_volume = cp.asarray(self.volume)
+            gpu_roi = cp.asarray(self.roi)
             
             # Apply 3D Gaussian filter with different sigma for each dimension
-            gpu_smoothed = cp_ndimage.gaussian_filter(gpu_volume, sigma=self.gauss_sigma)
+            gpu_smoothed = cp_ndimage.gaussian_filter(gpu_roi, sigma=self.gauss_sigma)
             
             # Convert back to CPU
-            self.volume = self.smoothed = cp.asnumpy(gpu_smoothed)
+            self.roi = cp.asnumpy(gpu_smoothed)
         else:
             # Apply 3D Gaussian filter with different sigma for each dimension
-            self.volume = self.smoothed = gaussian_filter(self.volume, sigma=self.gauss_sigma)
+            self.roi = gaussian_filter(self.roi, sigma=self.gauss_sigma)
         
         self._log("Regular smoothing complete", level=1, timing=time.time() - start_time)
-        return self.volume
+        return self.roi
 
     def binarize(self) -> np.ndarray:
         """Binarize the smoothed volume using triangle thresholding.
@@ -579,23 +597,23 @@ class VesselTracer:
         start_time = time.time()
         self._log("Binarizing volume...", level=1)
             
-        # Calculate triangle threshold using entire volume
-        thresh = threshold_triangle(self.smoothed.ravel())
+        # Calculate triangle threshold using entire ROI
+        thresh = threshold_triangle(self.roi.ravel())
         self._log(f"Triangle threshold: {thresh:.3f}", level=2)
         
         if self.use_gpu and GPU_AVAILABLE:
             self._log("Using GPU acceleration for binarization", level=2)
             # Convert to GPU array
-            gpu_volume = cp.asarray(self.volume)
+            gpu_roi = cp.asarray(self.roi)
             
             # Apply threshold on GPU
-            bw_vol = gpu_volume > thresh
+            bw_vol = gpu_roi > thresh
             
             # Convert back to CPU for morphological operations
             bw_vol = cp.asnumpy(bw_vol)
         else:
-            # Apply threshold to entire volume at once
-            bw_vol = self.volume > thresh
+            # Apply threshold to entire ROI at once
+            bw_vol = self.roi > thresh
         
         # Remove small objects in 3D
         bw_vol = remove_small_objects(bw_vol, min_size=self.min_object_size)
@@ -713,47 +731,78 @@ class VesselTracer:
         self._log(f"Skeletonized volume of shape {ske.shape}", level=2)
         
         # Create Skeleton object for path analysis
-        self.paths = Skeleton(ske)
+        skeleton_obj = Skeleton(ske)
         self._log("Created skeleton object", level=2)
         
         # Get detailed statistics using skan's summarize function
-        self.stats = summarize(self.paths, separator="-")
-        n_paths = self.paths.n_paths
+        self.stats = summarize(skeleton_obj, separator="-")
+        n_paths = skeleton_obj.n_paths
         
-        # Process paths and split them at region boundaries
-        if split_paths:
-            self._log("Splitting paths at region boundaries", level=2)
-            split_paths = {}  # Dictionary to store split paths
-            path_id = 1
-            
-            for i in range(1, n_paths):
-                path_coords = self.paths.path_coordinates(i)
-                path_segments = self.split_path_at_region_boundaries(path_coords)
+        # Convert skeleton object to dictionary with region information
+        paths_dict = {}
+        path_id = 1
+        
+        self._log(f"Processing {n_paths} skeleton paths", level=2)
+        
+        for i in range(n_paths):
+            try:
+                # Get path coordinates from skeleton object
+                path_coords = skeleton_obj.path_coordinates(i)
                 
-                # Store each segment as a separate path
-                for region, segment_coords in path_segments:
-                    if len(segment_coords) > 1:  # Only store segments with more than one point
-                        split_paths[path_id] = {
-                            'region': region,
-                            'coordinates': segment_coords  # Already in ZXY format
-                        }
-                        path_id += 1
-            self.paths = split_paths  # Finally set the paths to the split paths
-            self.n_paths = len(self.paths)
-        else:
-            # Convert Skeleton paths to dictionary format
-            path_dict = {}
-            for i in range(1, n_paths):
-                path_coords = self.paths.path_coordinates(i)
-                if len(path_coords) > 1:  # Only store paths with more than one point
-                    path_dict[i] = {
-                        'region': 'unknown',  # No region info since paths weren't split
-                        'coordinates': path_coords  # Already in ZXY format
+                if len(path_coords) == 0:
+                    continue
+                    
+                if split_paths:
+                    # Split path at region boundaries and create separate entries
+                    path_segments = self.split_path_at_region_boundaries(path_coords)
+                    
+                    for region, segment_coords in path_segments:
+                        if len(segment_coords) > 1:  # Only store segments with more than one point
+                            paths_dict[path_id] = {
+                                'original_path_id': i,
+                                'region': region,
+                                'coordinates': segment_coords,
+                                'length': len(segment_coords)
+                            }
+                            path_id += 1
+                else:
+                    # Determine the primary region for this path using z-coordinates
+                    z_coords = path_coords[:, 0]  # Extract z-coordinates
+                    regions_in_path = [self.get_region_for_z(z) for z in z_coords]
+                    
+                    # Find the most common region in this path
+                    from collections import Counter
+                    region_counts = Counter(regions_in_path)
+                    primary_region = region_counts.most_common(1)[0][0]
+                    
+                    # Calculate what fraction of path is in each region
+                    region_fractions = {region: count/len(regions_in_path) 
+                                      for region, count in region_counts.items()}
+                    
+                    paths_dict[path_id] = {
+                        'original_path_id': i,
+                        'region': primary_region,
+                        'region_fractions': region_fractions,
+                        'coordinates': path_coords,
+                        'length': len(path_coords),
+                        'z_range': (float(z_coords.min()), float(z_coords.max()))
                     }
-            self.paths = path_dict
-            self.n_paths = len(self.paths)
+                    path_id += 1
+                    
+            except Exception as e:
+                self._log(f"Warning: Error processing path {i}: {str(e)}", level=1)
+                continue
         
-        self._log(f"Found {self.n_paths} vessel path segments across regions", level=2)
+        # Store the converted paths and update counts
+        self.paths = paths_dict
+        self.n_paths = len(paths_dict)
+        
+        self._log(f"Converted skeleton to dictionary with {self.n_paths} vessel paths", level=2)
+        if split_paths:
+            self._log("Paths split at region boundaries", level=2)
+        else:
+            self._log("Paths labeled with primary regions", level=2)
+            
         self._log("Path tracing complete", level=1, timing=time.time() - start_time)    
         return self.paths, self.stats
 
@@ -774,12 +823,57 @@ class VesselTracer:
             depth_vol[z] = self.binary[z] * z
             
         return depth_vol
+    
+    def create_region_map_volume(self) -> np.ndarray:
+        """Create a volume where each z-position is labeled with its region number.
         
-    def get_projection(self, axis: Union[int, List[int]], operation: str = 'mean',
-                      xrng: Optional[Tuple[int, int]] = None,
-                      yrng: Optional[Tuple[int, int]] = None,
-                      zrng: Optional[Tuple[int, int]] = None) -> np.ndarray:
-        """Generate a projection of the binary volume along specified axis/axes.
+        Creates a 3D array the same size as the volume where each voxel is assigned
+        a region number based on its z-position:
+        - 0: Unknown/diving regions
+        - 1: Superficial
+        - 2: Intermediate  
+        - 3: Deep
+        
+        Returns:
+            np.ndarray: Volume with region labels (0-3) for each voxel
+        """
+        if not hasattr(self, 'region_bounds'):
+            self.determine_regions()
+        
+        # Create region map with same shape as ROI
+        Z, Y, X = self.roi.shape
+        region_map = np.zeros((Z, Y, X), dtype=np.uint8)
+        
+        # Define region number mapping
+        region_numbers = {
+            'superficial': 1,
+            'intermediate': 2,
+            'deep': 3
+        }
+        
+        # Assign region numbers to each z-slice
+        for z in range(Z):
+            region_name = self.get_region_for_z(z)
+            region_number = region_numbers.get(region_name, 0)  # 0 for unknown
+            region_map[z, :, :] = region_number
+        
+        self.region_map = region_map
+        self._log(f"Created region map volume with shape {region_map.shape}", level=2)
+        self._log(f"Region assignments: 0=unknown, 1=superficial, 2=intermediate, 3=deep", level=2)
+        
+        # Log region statistics
+        unique_regions, counts = np.unique(region_map, return_counts=True)
+        total_voxels = region_map.size
+        for region_num, count in zip(unique_regions, counts):
+            region_names = {0: 'unknown', 1: 'superficial', 2: 'intermediate', 3: 'deep'}
+            region_name = region_names.get(region_num, f'region_{region_num}')
+            percentage = (count / total_voxels) * 100
+            self._log(f"  {region_name}: {count:,} voxels ({percentage:.1f}%)", level=2)
+        
+        return region_map
+
+    def get_projection(self, axis: Union[int, List[int]], operation: str = 'mean', volume_type: str = 'binary') -> np.ndarray:
+        """Generate a projection of the specified volume along specified axis/axes.
         
         Args:
             axis: Dimension(s) to project along. Options:
@@ -792,19 +886,18 @@ class VesselTracer:
                 - 'min': Minimum intensity projection
                 - 'mean': Average intensity projection
                 - 'std': Standard deviation projection
-            xrng: Optional tuple of (start, end) indices for x dimension
-            yrng: Optional tuple of (start, end) indices for y dimension
-            zrng: Optional tuple of (start, end) indices for z dimension
+            volume_type: Type of volume to project. Options:
+                - 'binary': Binary volume (default)
+                - 'background': Background volume from median filtering
+                - 'volume': Current processed volume
+                - 'region_map': Region map volume with region labels
                 
         Returns:
             np.ndarray: Projected image
             
         Raises:
-            ValueError: If invalid axis or operation specified
+            ValueError: If invalid axis, operation, or volume_type specified
         """
-        if not hasattr(self, 'binary'):
-            self.binarize()
-            
         # Validate operation
         valid_ops = {
             'max': np.max,
@@ -820,6 +913,25 @@ class VesselTracer:
         valid_axes = [0, 1, 2, [1,2]]
         if not (axis in valid_axes or (isinstance(axis, list) and axis == [1,2])):
             raise ValueError("Axis must be 0 (z), 1 (y), 2 (x), or [1,2] (xy)")
+            
+        # Validate and get the specified volume
+        if volume_type == 'binary':
+            if not hasattr(self, 'binary'):
+                self.binarize()
+            volume = self.binary
+        elif volume_type == 'background':
+            if not hasattr(self, 'background'):
+                raise ValueError("Background volume not available. Run median_filter() first.")
+            volume = self.background
+        elif volume_type == 'volume':
+            # Use ROI if available, otherwise fall back to volume
+            volume = self.roi if hasattr(self, 'roi') and self.roi is not None else self.volume
+        elif volume_type == 'region_map':
+            if not hasattr(self, 'region_map'):
+                raise ValueError("Region map volume not available. Run create_region_map_volume() first.")
+            volume = self.region_map
+        else:
+            raise ValueError(f"volume_type must be one of ['binary', 'background', 'volume', 'region_map']")
             
         # Get projection function
         proj_func = valid_ops[operation]
@@ -841,9 +953,9 @@ class VesselTracer:
         # Calculate projection
         if isinstance(axis, list):
             # Special case for xy projection (along z)
-            projection = proj_func(volume_slice, axis=tuple(axis))
+            projection = proj_func(volume, axis=tuple(axis))
         else:
-            projection = proj_func(volume_slice, axis=axis)
+            projection = proj_func(volume, axis=axis)
             
         return projection
 
@@ -866,7 +978,8 @@ class VesselTracer:
 
     #These are pipeline functions used to run the analysis
     def run_analysis(self,
-                     split_paths: bool = False,
+                    remove_dead_frames: bool = True,
+                    dead_frame_threshold: float = 1.5,
                     skip_smoothing: bool = False,
                     skip_binarization: bool = False,
                     skip_regions: bool = False, 
@@ -892,14 +1005,15 @@ class VesselTracer:
         try:
             # Extract ROI
             # Normalize image before analysis
-            self._log("0. Normalizing image...", level=1)
-            self.normalize_image()
+            # self._log("0. Normalizing image...", level=1)
+            # self.normalize_image()
             
             self._log("1. Extracting ROI...", level=1)
             if self.find_roi:
-                self.segment_roi(remove_dead_frames=True, dead_frame_threshold=1.5)
+                self.segment_roi(remove_dead_frames=remove_dead_frames, dead_frame_threshold=dead_frame_threshold)
+            #Determine and subtract the background
             self.median_filter()
-            self.background_smoothing()
+            #self.background_smoothing()
             self.detrend()
             
             # Smooth volume
@@ -921,6 +1035,10 @@ class VesselTracer:
                     self._log(f"  Peak position: {peak:.1f}", level=2)
                     self._log(f"  Width (sigma): {sigma:.1f}", level=2)
                     self._log(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}", level=2)
+                
+                # Create region map volume
+                self._log("4b. Creating region map volume...", level=1)
+                self.create_region_map_volume()
             
             # Trace vessel paths
             self._log("5. Tracing vessel paths...", level=1)
@@ -948,8 +1066,8 @@ class VesselTracer:
                     #Options to save the volumes
                     save_volumes: bool = True,
                     save_original: bool = True,
-                    save_smoothed: bool = True,
                     save_binary: bool = True,
+                    save_region_map: bool = True,
                     save_separate: bool = False,
 
                     plot_projections: bool = True,
@@ -962,13 +1080,10 @@ class VesselTracer:
         Args:
             output_dir: Directory to save outputs
             save_original: Whether to save the original volume
-            save_smoothed: Whether to save the smoothed volume
             save_binary: Whether to save the binary volume
-            save_skeleton: Whether to save the skeleton volume
+            save_region_map: Whether to save the region map volume
             save_volumes: Whether to save any volumes
-            save_projections: Whether to save projections
-            save_regions: Whether to save region analysis
-            save_paths: Whether to save vessel paths
+            save_separate: Whether to save volumes separately
             skip_smoothing: Whether to skip the smoothing step
             skip_binarization: Whether to skip the binarization step
             skip_regions: Whether to skip the region detection step
@@ -1004,34 +1119,11 @@ class VesselTracer:
             self.save_volume(
                 output_dir,
                 save_original=save_original,
-                save_smoothed=save_smoothed,
                 save_binary=save_binary,
+                save_region_map=save_region_map,
                 save_separate=save_separate
             )
-            
-            # # Save projections if requested
-            # if save_projections:
-            #     self._log("10. Saving projections...", level=1)
-            #     self.save_projections(output_dir)
-            
-            # # Save region analysis if requested and available
-            # if save_regions and hasattr(self, 'region_bounds'):
-            #     self._log("11. Saving region analysis...", level=1)
-            #     self.save_region_analysis(output_dir)
-            
-            # # Save vessel paths if requested and available
-            # if save_paths and hasattr(self, 'paths'):
-            #     self._log("12. Saving vessel paths...", level=1)
-            #     self.save_vessel_paths(output_dir)
-            
             self._log("Pipeline complete!", level=1, timing=time.time() - start_time)
-
-        # if plot_projections:
-        #     fig1, ax = plot_projections(self)   
-        # if plot_regions:
-        #     fig2, ax = plot_regions(self)
-        # if plot_paths:
-        #     fig3, ax = plot_paths(self)
 
     def update_roi_position(self, center_x: int, center_y: int, micron_roi: Optional[float] = None) -> None:
         """Update the ROI center position and optionally its size.
@@ -1054,8 +1146,9 @@ class VesselTracer:
             print(f"  Size: {self.micron_roi} -> {micron_roi} microns")
             self.micron_roi = micron_roi
         
-        # Clear computed results since they're no longer valid
-        for attr in ['volume', 'smoothed', 'binary', 'skeleton', 'stats', 'region_bounds']:
+        # Clear ROI-specific computed results since they're no longer valid
+        # Note: volume and paths are preserved, only ROI-specific results are cleared
+        for attr in ['roi', 'binary', 'region_map', 'paths']:
             if hasattr(self, attr):
                 delattr(self, attr)
                 
@@ -1065,16 +1158,16 @@ class VesselTracer:
     def save_volume(self, 
                    output_dir: str,
                    save_original: bool = True,
-                   save_smoothed: bool = True,
                    save_binary: bool = True,
+                   save_region_map: bool = True,
                    save_separate: bool = False) -> None:
         """Save volume data as .tif files.
         
         Args:
             output_dir: Directory to save the .tif files
             save_original: Whether to save the original ROI volume
-            save_smoothed: Whether to save the smoothed volume
             save_binary: Whether to save the binary volume
+            save_region_map: Whether to save the region map volume
             save_separate: If True, saves each volume type as a separate file.
                           If False, saves all volumes in a single multi-channel file.
         """
@@ -1083,24 +1176,26 @@ class VesselTracer:
         output_path.mkdir(parents=True, exist_ok=True)
         
         # Ensure we have the volumes we want to save
-        if save_smoothed and not hasattr(self, 'smoothed'):
-            self.smooth()
         if save_binary and not hasattr(self, 'binary'):
             self.binarize()
+        if save_region_map and not hasattr(self, 'region_map'):
+            self.create_region_map_volume()
             
         # Prepare volumes for saving
         volumes = []
         volume_names = []
         
         if save_original:
-            volumes.append(self.volume)
+            # Save ROI if available, otherwise save original volume
+            original_data = self.roi if hasattr(self, 'roi') and self.roi is not None else self.volume
+            volumes.append(original_data)
             volume_names.append('original')
-        if save_smoothed:
-            volumes.append(self.smoothed)
-            volume_names.append('smoothed')
         if save_binary:
             volumes.append(self.binary.astype(np.uint8))  # Convert boolean to uint8
             volume_names.append('binary')
+        if save_region_map:
+            volumes.append(self.region_map)  # Already uint8
+            volume_names.append('region_map')
             
         if not volumes:
             print("No volumes selected for saving!")
@@ -1143,10 +1238,10 @@ class VesselTracer:
                 'Timestamp',
                 'Config Used',
                 'ROI Finding',
-                'Smoothing Applied',
                 'Binarization Applied',
                 'Region Detection Applied',
-                'Volume Shape',
+                'Region Map Created',
+                'ROI Shape',
                 'Pixel Sizes (Z,Y,X)'
             ],
             'Value': [
@@ -1154,10 +1249,10 @@ class VesselTracer:
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 str(self.config_path),
                 self.find_roi,
-                hasattr(self, 'smoothed'),
                 hasattr(self, 'binary'),
                 hasattr(self, 'region_bounds'),
-                str(self.volume.shape),
+                hasattr(self, 'region_map'),
+                str(self.roi.shape) if hasattr(self, 'roi') and self.roi is not None else 'N/A',
                 str(self.pixel_sizes)
             ]
         })
@@ -1190,29 +1285,62 @@ class VesselTracer:
         # Create vessel paths DataFrame if available
         if hasattr(self, 'paths'):
             vessel_paths_data = []
+            path_summary_data = []
+            
             for path_id, path_info in self.paths.items():
                 coords = path_info['coordinates']  # Already in ZXY format
                 region = path_info['region']
-                # Convert path coordinates to DataFrame rows
+                original_id = path_info.get('original_path_id', path_id)
+                length = path_info.get('length', len(coords))
+                
+                # Create summary entry for this path
+                summary_entry = {
+                    'Path_ID': path_id,
+                    'Original_Path_ID': original_id,
+                    'Primary_Region': region,
+                    'Path_Length': length,
+                    'Start_Z': coords[0][0] if len(coords) > 0 else None,
+                    'End_Z': coords[-1][0] if len(coords) > 0 else None,
+                }
+                
+                # Add region fractions if available (for non-split paths)
+                if 'region_fractions' in path_info:
+                    for region_name, fraction in path_info['region_fractions'].items():
+                        summary_entry[f'{region_name}_Fraction'] = fraction
+                        
+                # Add z-range if available
+                if 'z_range' in path_info:
+                    summary_entry['Z_Min'] = path_info['z_range'][0]
+                    summary_entry['Z_Max'] = path_info['z_range'][1]
+                    
+                path_summary_data.append(summary_entry)
+                
+                # Convert path coordinates to DataFrame rows (detailed view)
                 for i, coord in enumerate(coords):
                     vessel_paths_data.append({
                         'Path_ID': path_id,
-                        'Region': region,
+                        'Original_Path_ID': original_id,
+                        'Primary_Region': region,
                         'Point_Index': i,
                         'Z': coord[0],  # Z coordinate
                         'X': coord[1],  # X coordinate
-                        'Y': coord[2]   # Y coordinate
+                        'Y': coord[2],  # Y coordinate
+                        'Point_Region': self.get_region_for_z(coord[0])  # Region for this specific point
                     })
+                    
             self.paths_df = pd.DataFrame(vessel_paths_data)
+            self.path_summary_df = pd.DataFrame(path_summary_data)
         else:
             self.paths_df = pd.DataFrame()
+            self.path_summary_df = pd.DataFrame()
         
         # Store all DataFrames in a dictionary
         self.analysis_dfs = {
             'metadata': self.metadata_df,
             'regions': self.regions_df,
             'z_profile': self.z_profile_df,
-            'paths': self.paths_df
+            'paths': self.paths_df,
+            'path_summary': self.path_summary_df
         }
         
         return self.analysis_dfs
@@ -1238,4 +1366,91 @@ class VesselTracer:
             if not self.z_profile_df.empty:
                 self.z_profile_df.to_excel(writer, sheet_name='Z Profile', index=False)
             if not self.paths_df.empty:
-                self.paths_df.to_excel(writer, sheet_name='Vessel Paths', index=False)
+                self.paths_df.to_excel(writer, sheet_name='Vessel Paths Detailed', index=False)
+            if hasattr(self, 'path_summary_df') and not self.path_summary_df.empty:
+                self.path_summary_df.to_excel(writer, sheet_name='Vessel Paths Summary', index=False)
+
+    def multiscan(self) -> None:
+        """Scan multiple ROIs across the volume.
+        
+        Performs systematic scanning across the volume using the configured ROI size.
+        For each ROI position, runs the full analysis pipeline and stores results.
+        Paths are preserved across ROI changes, and global coordinates are maintained.
+        """
+        self.multiscan_results = []
+        micron_roi = self.micron_roi
+        # Calculate scan ranges based on volume dimensions and ROI size
+        # Use average of X and Y pixel sizes for ROI conversion
+        avg_pixel_size = (self.pixel_size_x + self.pixel_size_y) / 2
+        pixel_roi = int(micron_roi / avg_pixel_size)
+        
+        # Get volume dimensions
+        _, Y, X = self.volume.shape
+        
+        # Create scan ranges with ROI-sized steps
+        xscan_rng = range(0, X - pixel_roi + 1, pixel_roi)
+        yscan_rng = range(0, Y - pixel_roi + 1, pixel_roi)
+        
+        self._log(f"Setting up multiscan with {len(xscan_rng)}x{len(yscan_rng)} ROIs", level=2)
+        self._log(f"ROI size: {pixel_roi} pixels ({micron_roi} microns)", level=2)
+
+        # Store results for each ROI
+        roi_results = []
+        
+        # Iterate through ROI positions
+        for y in yscan_rng:
+            for x in xscan_rng:
+                self._log(f"Processing ROI at position ({x}, {y})", level=2)
+                
+                # Update ROI position (this will clear roi and binary, but preserve volume and paths)
+                self.update_roi_position(x + pixel_roi//2, y + pixel_roi//2)
+                
+                #Check to see if there are paths
+                if hasattr(self, 'paths') and self.paths:
+                    old_paths = self.paths.copy()
+                else:
+                    old_paths = None
+
+                # Run analysis on this ROI
+                self.run_analysis(
+                    skip_smoothing=False,
+                    skip_binarization=False, 
+                    skip_regions=False,
+                    skip_trace=False
+                )
+                
+                # Generate analysis data
+                self.generate_analysis_dataframes()
+
+                # Convert local path coordinates to global coordinates
+                if hasattr(self, 'paths') and self.paths:
+                    for path_id, path_info in self.paths.items():
+                        if 'coordinates' in path_info:
+                            coords = path_info['coordinates']
+                            # Add ROI offset to convert local to global coordinates
+                            # ROI start position
+                            roi_start_x = x
+                            roi_start_y = y
+                            
+                            # Add offset to x and y coordinates (z remains the same)
+                            coords[:, 1] += roi_start_x  # X coordinate
+                            coords[:, 2] += roi_start_y  # Y coordinate
+
+
+                # Store results with position info
+                roi_data = {
+                    'center_x': x + pixel_roi//2,
+                    'min_x': x,
+                    'max_x': x + pixel_roi,
+                    'center_y': y + pixel_roi//2,
+                    'min_y': y,
+                    'max_y': y + pixel_roi,
+                    'paths': self.paths.copy() if hasattr(self, 'paths') and self.paths else {}
+                }
+                roi_results.append(roi_data)
+                
+                self._log(f"Completed ROI analysis at ({x}, {y})", level=2)
+        
+        # Store the multi-ROI results
+        self.roi_results = roi_results
+        self._log(f"Completed multiscan analysis of {len(roi_results)} ROIs", level=1)

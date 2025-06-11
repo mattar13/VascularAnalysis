@@ -10,7 +10,7 @@ Main Components:
 """
 
 from .tracer import VesselTracer
-from .plotting import show_max_projection
+from .plotting import show_max_projection, plot_vertical_region_map
 
 __version__ = '0.1.0'
 __author__ = 'Matt'
@@ -18,4 +18,5 @@ __author__ = 'Matt'
 __all__ = [
     'VesselTracer',
     'show_max_projection',
+    'plot_vertical_region_map',
 ]
