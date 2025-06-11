@@ -125,50 +125,6 @@ class VesselAnalysisController:
         
         self.config.save_metadata(output_path, pixel_sizes, input_type, processing_status, format)
 
-    def get_projection(self, 
-                      axis: Union[int, List[int]], 
-                      operation: str = 'mean', 
-                      volume_type: str = 'binary',
-                      z_range: Optional[Tuple[int, int]] = None,
-                      y_range: Optional[Tuple[int, int]] = None,
-                      x_range: Optional[Tuple[int, int]] = None) -> np.ndarray:
-        """Generate a projection of the specified volume along specified axis/axes.
-        
-        Args:
-            axis: Dimension(s) to project along (0=z, 1=y, 2=x, [1,2]=xy)
-            operation: Type of projection ('max', 'min', 'mean', 'std')
-            volume_type: Type of volume to project ('binary', 'background', 'volume', 'region_map')
-            z_range: Optional tuple of (start, end) for z dimension
-            y_range: Optional tuple of (start, end) for y dimension  
-            x_range: Optional tuple of (start, end) for x dimension
-                
-        Returns:
-            np.ndarray: Projected image
-        """
-        # Delegate projection generation to appropriate component
-        if volume_type in ['binary', 'volume', 'background']:
-            # Delegate to processor for volume-based projections
-            return self.processor.get_projection(
-                axis=axis, 
-                operation=operation, 
-                volume_type=volume_type,
-                z_range=z_range, 
-                y_range=y_range, 
-                x_range=x_range
-            )
-        elif volume_type in ['region_map', 'region']:
-            # Delegate to tracer for region-based projections
-            return self.tracer.get_projection(
-                axis=axis, 
-                operation=operation, 
-                volume_type='region_map',
-                z_range=z_range, 
-                y_range=y_range, 
-                x_range=x_range
-            )
-        else:
-            raise ValueError(f"volume_type must be one of ['binary', 'background', 'volume', 'region_map']")
-
     def run_analysis(self,
                     remove_dead_frames: bool = True,
                     dead_frame_threshold: float = 1.5,
@@ -209,36 +165,30 @@ class VesselAnalysisController:
             else:
                 self._log("Using full volume as ROI", level=1)
                 self.roi_model = self.image_model
-                
+            
             # 2. Background subtraction using ImageProcessor
             self._log("2. Background subtraction...", level=1)
-            self.processor.median_filter_background_subtraction(self.roi_model)
-
+            self.roi_model.volume, self.roi_model.background = self.processor.median_filter_background_subtraction(self.roi_model)
             # 3. Detrend using ImageProcessor
             self._log("3. Detrending...", level=1)
-            self.processor.detrend_volume(self.roi_model)
+            self.roi_model.volume = self.processor.detrend_volume(self.roi_model)
             
             # 4. Smooth volume using ImageProcessor
             if not skip_smoothing:
                 self._log("4. Smoothing volume...", level=1)
-                self.processor.smooth_volume(self.roi_model)
+                self.roi_model.volume = self.processor.smooth_volume(self.roi_model)
             
             # 5. Binarize vessels using ImageProcessor
             if not skip_binarization:
                 self._log("5. Binarizing vessels...", level=1)
-                self.processor.binarize_volume(self.roi_model)
+                self.roi_model.binary = self.processor.binarize_volume(self.roi_model)
             
             # 6. Determine regions using VesselTracer
             if not skip_regions:
                 self._log("6. Determining regions...", level=1)
                 
-                # Get binary volume from processor and pass to tracer
-                binary_volume = self.processor.binarize_volume(self.roi_model)
-                if binary_volume is None:
-                    raise ValueError("No binary volume available for region determination")
-                
                 # VesselTracer determines and stores regions internally
-                region_bounds = self.tracer.determine_regions(binary_volume)
+                region_bounds = self.tracer.determine_regions(self.roi_model.binary)
                 for region, (peak, sigma, bounds) in region_bounds.items():
                     self._log(f"\n{region}:", level=2)
                     self._log(f"  Peak position: {peak:.1f}", level=2)
@@ -247,20 +197,15 @@ class VesselAnalysisController:
                 
                 # Create region map volume using VesselTracer
                 self._log("6b. Creating region map volume...", level=1)
-                self.tracer.create_region_map_volume(binary_volume, region_bounds)
+                self.roi_model.region = self.tracer.create_region_map_volume(self.roi_model.binary, region_bounds)
             
             # 7. Trace vessel paths using VesselTracer
             if not skip_trace:
                 self._log("7. Tracing vessel paths...", level=1)
-                
-                # Get binary volume from processor and pass to tracer
-                binary_volume = self.processor.binarize_volume(self.roi_model)
-                if binary_volume is None:
-                    raise ValueError("No binary volume available for path tracing")
-                
+
                 # VesselTracer traces and stores paths internally
-                paths, stats = self.tracer.trace_paths(
-                    binary_volume=binary_volume,
+                self.roi_model.paths, self.roi_model.path_stats = self.tracer.trace_paths(
+                    binary_volume=self.roi_model.binary,
                     region_bounds=None,  # VesselTracer will use its stored region_bounds
                     split_paths=False  # Can be made configurable
                 )
@@ -270,79 +215,6 @@ class VesselAnalysisController:
         except Exception as e:
             self._log(f"Error in analysis pipeline: {str(e)}", level=1)
             raise 
-      
-    def run_pipeline(self,
-                    output_dir: Union[str, Path],
-                    # Analysis steps
-                    skip_smoothing: bool = False,
-                    skip_binarization: bool = False,
-                    skip_regions: bool = False,
-                    skip_trace: bool = False,
-                    # DataFrame generation
-                    skip_dataframe: bool = False,
-                    # Volume saving options
-                    save_volumes: bool = True,
-                    save_original: bool = True,
-                    save_binary: bool = True,
-                    save_region_map: bool = True,
-                    save_separate: bool = False,
-                    # ROI options
-                    remove_dead_frames: bool = True,
-                    dead_frame_threshold: float = 1.5) -> None:
-        """Run the complete analysis pipeline and save all outputs.
-        
-        Args:
-            output_dir: Directory to save outputs
-            skip_smoothing: Whether to skip the smoothing step
-            skip_binarization: Whether to skip the binarization step
-            skip_regions: Whether to skip the region detection step
-            skip_trace: Whether to skip the trace step
-            skip_dataframe: Whether to skip generating and saving DataFrames
-            save_volumes: Whether to save any volumes
-            save_original: Whether to save the original volume
-            save_binary: Whether to save the binary volume
-            save_region_map: Whether to save the region map volume
-            save_separate: Whether to save volumes separately
-            remove_dead_frames: Whether to remove low-intensity frames at start/end
-            dead_frame_threshold: Number of standard deviations above minimum
-        """
-        start_time = time.time()
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        self._log(f"Starting analysis pipeline...", level=1)
-        self._log(f"Output directory: {output_dir}", level=2)
-        
-        # Run the analysis
-        self.run_analysis(
-            remove_dead_frames=remove_dead_frames,
-            dead_frame_threshold=dead_frame_threshold,
-            skip_smoothing=skip_smoothing,
-            skip_binarization=skip_binarization,
-            skip_regions=skip_regions,
-            skip_trace=skip_trace,
-        )
-       
-        # Generate and save DataFrames if not skipped
-        if not skip_dataframe:
-            self._log("8. Generating analysis DataFrames...", level=1)
-            analysis_dfs = self.generate_analysis_dataframes()
-            excel_path = output_dir / 'analysis_results.xlsx'
-            self._log(f"Saving DataFrames to {excel_path}...", level=2)
-            self.save_analysis_to_excel(excel_path)
-        
-        # Save volumes if requested
-        if save_volumes:
-            self._log("9. Saving volumes...", level=1)
-            self.save_volume(
-                output_dir,
-                save_original=save_original,
-                save_binary=save_binary,
-                save_region_map=save_region_map,
-                save_separate=save_separate
-            )
-            
-        self._log("Pipeline complete!", level=1, timing=time.time() - start_time)
 
     def update_roi_position(self, min_x: int, min_y: int, micron_roi: Optional[float] = None) -> None:
         """Update the ROI minimum position and optionally its size.
@@ -609,39 +481,3 @@ class VesselAnalysisController:
         
         self._log(f"Completed multiscan analysis of {len(roi_results)} ROIs", level=1)
         return roi_results
-
-    # Properties that delegate to component objects (no storage in Controller)
-    @property
-    def volume(self) -> Optional[np.ndarray]:
-        """Get the current processed volume from processor."""
-        return self.processor.get_current_volume()
-    
-    @property
-    def binary(self) -> Optional[np.ndarray]:
-        """Get the binary volume from processor."""
-        return self.processor.get_binary_volume()
-    
-    @property
-    def region_map(self) -> Optional[np.ndarray]:
-        """Get the region map volume from tracer."""
-        return self.tracer.get_region_map_volume()
-    
-    @property
-    def paths(self) -> Dict[str, Any]:
-        """Get the traced paths from tracer."""
-        return self.tracer.get_paths()
-    
-    @property
-    def path_count(self) -> int:
-        """Get the number of traced paths from tracer."""
-        return self.tracer.get_path_count()
-    
-    @property
-    def region_bounds(self) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
-        """Get the region bounds from tracer."""
-        return self.tracer.get_region_bounds()
-    
-    @property
-    def background(self) -> Optional[np.ndarray]:
-        """Get the background volume from processor."""
-        return self.processor.get_background_volume() 
