@@ -391,7 +391,7 @@ class VesselTracer:
         self.previous_volume = self.volume.copy()
         self.volume = (self.volume - self.volume.min()) / (self.volume.max() - self.volume.min())
         
-    def segment_roi(self, remove_dead_frames: bool = True, dead_frame_threshold: float = 1.5) -> np.ndarray:
+    def segment_roi(self, remove_dead_frames: bool = True, dead_frame_threshold: float = 1.5) -> Optional[np.ndarray]:
         """Extract and segment region of interest from volume.
         
         If find_roi is False, uses the entire volume. Otherwise, extracts a region
@@ -404,7 +404,7 @@ class VesselTracer:
                                 intensity to use as threshold for dead frames
         
         Returns:
-            np.ndarray: ROI volume extracted from main volume
+            np.ndarray: ROI volume extracted from main volume, or None if no valid frames found
         """
         start_time = time.time()
         self._log("Processing volume...", level=1)
@@ -450,8 +450,8 @@ class VesselTracer:
                     # Store frame range for reference
                     self.valid_frame_range = (frame_start, frame_end)
                 else:
-                    self._log("Warning: No frames found above threshold!", level=1)
-                    self.valid_frame_range = (0, len(z_profile)-1)
+                    self._log("Warning: No frames found above threshold! Skipping this ROI.", level=1)
+                    return None
             else:
                 self.valid_frame_range = (0, roi.shape[0]-1)
             self.roi = roi
@@ -1370,14 +1370,19 @@ class VesselTracer:
             if hasattr(self, 'path_summary_df') and not self.path_summary_df.empty:
                 self.path_summary_df.to_excel(writer, sheet_name='Vessel Paths Summary', index=False)
 
-    def multiscan(self) -> None:
+    def multiscan(self, 
+                  skip_smoothing: bool = False, 
+                  skip_binarization: bool = False, 
+                  skip_regions: bool = False, 
+                  skip_trace: bool = False
+                ) -> None:
         """Scan multiple ROIs across the volume.
         
         Performs systematic scanning across the volume using the configured ROI size.
         For each ROI position, runs the full analysis pipeline and stores results.
         Paths are preserved across ROI changes, and global coordinates are maintained.
         """
-        self.multiscan_results = []
+        self.roi_results = []
         micron_roi = self.micron_roi
         # Calculate scan ranges based on volume dimensions and ROI size
         # Use average of X and Y pixel sizes for ROI conversion
@@ -1394,8 +1399,6 @@ class VesselTracer:
         self._log(f"Setting up multiscan with {len(xscan_rng)}x{len(yscan_rng)} ROIs", level=2)
         self._log(f"ROI size: {pixel_roi} pixels ({micron_roi} microns)", level=2)
 
-        # Store results for each ROI
-        roi_results = []
         
         # Iterate through ROI positions
         for y in yscan_rng:
@@ -1404,53 +1407,55 @@ class VesselTracer:
                 
                 # Update ROI position (this will clear roi and binary, but preserve volume and paths)
                 self.update_roi_position(x + pixel_roi//2, y + pixel_roi//2)
-                
-                #Check to see if there are paths
-                if hasattr(self, 'paths') and self.paths:
-                    old_paths = self.paths.copy()
-                else:
-                    old_paths = None
 
                 # Run analysis on this ROI
-                self.run_analysis(
-                    skip_smoothing=False,
-                    skip_binarization=False, 
-                    skip_regions=False,
-                    skip_trace=False
-                )
-                
-                # Generate analysis data
-                self.generate_analysis_dataframes()
+                try:
+                    self.run_analysis(
+                        skip_smoothing=skip_smoothing,
+                        skip_binarization=skip_binarization, 
+                        skip_regions=skip_regions,
+                        skip_trace=skip_trace
+                    )
+                    
+                    # Skip if ROI is None (no valid frames)
+                    if self.roi is None:
+                        self._log(f"Skipping ROI at ({x}, {y}) - no valid frames found", level=1)
+                        continue
 
-                # Convert local path coordinates to global coordinates
-                if hasattr(self, 'paths') and self.paths:
-                    for path_id, path_info in self.paths.items():
-                        if 'coordinates' in path_info:
-                            coords = path_info['coordinates']
-                            # Add ROI offset to convert local to global coordinates
-                            # ROI start position
-                            roi_start_x = x
-                            roi_start_y = y
-                            
-                            # Add offset to x and y coordinates (z remains the same)
-                            coords[:, 1] += roi_start_x  # X coordinate
-                            coords[:, 2] += roi_start_y  # Y coordinate
+                    # Generate analysis data
+                    self.generate_analysis_dataframes()
 
+                    # Convert local path coordinates to global coordinates
+                    if hasattr(self, 'paths') and self.paths:
+                        for path_id, path_info in self.paths.items():
+                            if 'coordinates' in path_info:
+                                coords = path_info['coordinates']
+                                # Add ROI offset to convert local to global coordinates
+                                # ROI start position
+                                roi_start_x = x
+                                roi_start_y = y
+                                
+                                # Add offset to x and y coordinates (z remains the same)
+                                coords[:, 1] += roi_start_x  # X coordinate
+                                coords[:, 2] += roi_start_y  # Y coordinate
 
-                # Store results with position info
-                roi_data = {
-                    'center_x': x + pixel_roi//2,
-                    'min_x': x,
-                    'max_x': x + pixel_roi,
-                    'center_y': y + pixel_roi//2,
-                    'min_y': y,
-                    'max_y': y + pixel_roi,
-                    'paths': self.paths.copy() if hasattr(self, 'paths') and self.paths else {}
-                }
-                roi_results.append(roi_data)
-                
-                self._log(f"Completed ROI analysis at ({x}, {y})", level=2)
+                    # Store results with position info
+                    roi_data = {
+                        'center_x': x + pixel_roi//2,
+                        'min_x': x,
+                        'max_x': x + pixel_roi,
+                        'center_y': y + pixel_roi//2,
+                        'min_y': y,
+                        'max_y': y + pixel_roi,
+                        'paths': self.paths.copy() if hasattr(self, 'paths') and self.paths else {}
+                    }
+                    self.roi_results.append(roi_data)
+                    
+                    self._log(f"Completed ROI analysis at ({x}, {y})", level=2)
+                except Exception as e:
+                    self._log(f"Error processing ROI at ({x}, {y}): {str(e)}", level=1)
+                    continue
         
         # Store the multi-ROI results
-        self.roi_results = roi_results
-        self._log(f"Completed multiscan analysis of {len(roi_results)} ROIs", level=1)
+        self._log(f"Completed multiscan analysis of {len(self.roi_results)} ROIs", level=1)
+        return self.roi_results
