@@ -12,7 +12,7 @@ def main(input_path, output_dir=None):
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
     # Create output directory name based on input file name and timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d")
     file_stem = input_path.stem
     output_dir = Path(f'test/output/from{file_stem}_on{timestamp}')
     # Create output directory
@@ -22,7 +22,7 @@ def main(input_path, output_dir=None):
         # Initialize tracer
         print(f"Loading file: {input_path}")
         tracer = VesselTracer(input_path)
-        tracer.activate_gpu()
+        #tracer.activate_gpu()
         # Run the complete pipeline
         print("Running analysis pipeline...")
         tracer.run_analysis(
@@ -42,9 +42,6 @@ def main(input_path, output_dir=None):
 
         fig2c, ax2c = plot_projections(tracer, mode='binary')
         fig2c.savefig(output_dir / "binary_projections.png")
-
-        fig2d, ax2d = plot_projections(tracer, mode='regions')
-        fig2d.savefig(output_dir / "regions_projections.png")
 
         fig3, ax3 = plot_regions(tracer)
         fig3.savefig(output_dir / "regions.png")
