@@ -22,6 +22,7 @@ class ImageModel:
     pixel_size_x: float = 1.0
     pixel_size_y: float = 1.0
     pixel_size_z: float = 1.0
+    shape: Optional[Tuple[int, int, int]] = None
     
     def __post_init__(self):
         """Initialize paths and handle automatic loading based on filepath or input_data."""
@@ -61,11 +62,11 @@ class ImageModel:
         self.pixel_size_x = _px_um("X")
         self.pixel_size_y = _px_um("Y")
         self.pixel_size_z = _px_um("Z")
-
+        self.shape = self.volume.shape
     def load_from_tiff(self, file_path: Path, pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)) -> None:
         """Load TIFF file."""
         self.volume = tifffile.imread(file_path)
-        
+        self.shape = self.volume.shape
         # For TIFF files, use the provided pixel sizes
         self.pixel_size_z, self.pixel_size_y, self.pixel_size_x = pixel_sizes
 
@@ -76,7 +77,8 @@ class ImageModel:
         
         self.volume = array
         self.pixel_size_z, self.pixel_size_y, self.pixel_size_x = pixel_sizes
-
+        self.shape = self.volume.shape
+        
     def get_pixel_sizes(self) -> Tuple[float, float, float]:
         """Get pixel sizes as tuple (z, y, x)."""
         return (self.pixel_size_z, self.pixel_size_y, self.pixel_size_x)
@@ -140,9 +142,12 @@ class ImageModel:
                 raise ValueError("Binary volume not available.")
             volume = self.binary
         elif volume_type == 'background':
-            if background_volume is None:
-                raise ValueError("Background volume not available. Provide background_volume parameter.")
-            volume = background_volume
+            if hasattr(self, 'background') and self.background is not None:
+                volume = self.background
+            elif background_volume is not None:
+                volume = background_volume
+            else:
+                raise ValueError("Background volume not available.")
         elif volume_type == 'volume':
             if self.volume is None:
                 raise ValueError("Volume not available.")
