@@ -25,7 +25,7 @@ class VesselTracerConfig:
     # Pre-processing parameters (in microns)
     micron_gauss_sigma: float = 2.0
     micron_background_sigma: float = 3.0
-    micron_median_filter_size: float = 50.0
+    micron_median_filter_size: float = 5.0
     micron_close_radius: float = 2.0
     min_object_size: int = 64
     prune_length: int = 5
