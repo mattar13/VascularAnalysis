@@ -9,14 +9,22 @@ Main Components:
 - plotting: Visualization utilities
 """
 
+# Import main components
+# from .config import VesselTracerConfig
+# from .image_model import ImageModel, ROI
+# from .image_processor import ImageProcessor
+# from .tracer import VesselTracer
+# from .plotting import show_max_projection
 from .tracer import VesselTracer
-from .plotting import show_max_projection
 
 __version__ = '0.1.0'
 __author__ = 'Matt'
 
 __all__ = [
     'VesselTracer',
+    'VesselTracerConfig', 
+    'ImageModel',
+    'ROI',
+    'ImageProcessor',
     'show_max_projection',
-    'plot_vertical_region_map',
 ]
