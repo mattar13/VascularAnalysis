@@ -1,6 +1,6 @@
-from pathlib import Path
 import numpy as np
 import tifffile
+from pathlib import Path
 import time
 from datetime import datetime
 import pandas as pd
@@ -11,7 +11,6 @@ from .image_processor import ImageProcessor
 from .vessel_tracer import VesselTracer
 from .config import VesselTracerConfig
 from .image_model import ImageModel, ROI
-
 
 class VesselAnalysisController:
     """Controller class that orchestrates the complete vessel analysis pipeline.
