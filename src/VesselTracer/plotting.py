@@ -45,21 +45,21 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'binary', depth_coded
     
     # Ensure required data exists and get data based on mode
     if mode == 'volume':
-        data = tracer.volume
+        data = tracer.image_model.volume
     elif mode == 'roi':
-        if not hasattr(tracer, 'roi') or tracer.roi is None:
+        if not hasattr(tracer.roi_model, 'volume') or tracer.roi_model.volume is None:
             raise ValueError("ROI data not available. Run segment_roi() first.")
-        data = tracer.roi
+        data = tracer.roi_model.volume
     elif mode == 'binary':
-        if not hasattr(tracer, 'binary'):
+        if not hasattr(tracer.roi_model, 'binary'):
             tracer.binarize()
-        data = tracer.binary
+        data = tracer.roi_model.binary
     elif mode == 'region':
-        if not hasattr(tracer, 'region_map'):
+        if not hasattr(tracer.roi_model, 'region'):
             tracer.create_region_map_volume()
-        data = tracer.region_map
+        data = tracer.roi_model.region
     elif mode == 'background':
-        data = tracer.background
+        data = tracer.roi_model.background
     
     # Create figure with gridspec
     fig = plt.figure(figsize=figsize)
@@ -113,7 +113,7 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'binary', depth_coded
     ax_z.axis('on')
     
     # Add scale bar (assuming we have pixel size)
-    scalebar_length_pixels = int(50 / tracer.pixel_size_x)  # 50 micron scale bar
+    scalebar_length_pixels = int(50 / tracer.image_model.pixel_size_x)  # 50 micron scale bar
     ax_z.plot([20, 20 + scalebar_length_pixels], [z_proj.shape[0] - 20] * 2, 
               'w-' if cmap == 'gray' else 'k-', linewidth=2)
     
