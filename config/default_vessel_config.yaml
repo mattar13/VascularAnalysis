@@ -1,9 +1,9 @@
 # Region of Interest (ROI) settings
 roi:
   find_roi: True
-  micron_roi: 2000.0  # ROI size in microns
-  center_x: 1200     # X center coordinate
-  center_y: 1250     # Y center coordinate
+  micron_roi: 250.0  # ROI size in microns
+  center_x: 500     # X center coordinate
+  center_y: 500     # Y center coordinate
 
 
 # Pre-processing parameters
