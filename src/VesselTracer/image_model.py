@@ -12,6 +12,7 @@ class ImageModel:
     
     volume: Optional[np.ndarray] = None
     binary: Optional[np.ndarray] = None
+    background: Optional[np.ndarray] = None
     region: Optional[np.ndarray] = None
     paths: Optional[Dict[str, Any]] = None
     
