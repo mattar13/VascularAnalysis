@@ -32,29 +32,33 @@ def main(input_path, output_dir=None):
             skip_regions=False,
             skip_trace=False,
         )
-        
+        # print(controller.roi_model.background.shape)
         # Generate plots using the controller's projection methods
-        fig1, ax1 = plot_projections(controller, mode='volume')
+        print("Plotting projections...")
+        fig1, ax1 = plot_projections(controller, mode = "volume", source='volume')
         fig1.savefig(output_dir / "volume_projections.png")
 
-        fig2, ax2 = plot_projections(controller, mode='roi')
+        fig2, ax2 = plot_projections(controller, mode = 'volume', source='roi')
         fig2.savefig(output_dir / "roi_projections.png")
 
-        fig2b, ax2b = plot_projections(controller, mode='region')
+        fig2b, ax2b = plot_projections(controller, mode='region', source = 'roi')
         fig2b.savefig(output_dir / "region_projections.png")
 
-        fig2a, ax2a = plot_projections(controller, mode='background')
+        fig2a, ax2a = plot_projections(controller, mode='background', source = 'roi')
         fig2a.savefig(output_dir / "background_projections.png")
 
-        fig2c, ax2c = plot_projections(controller, mode='binary')
+        fig2c, ax2c = plot_projections(controller, mode='binary', source = 'roi')
         fig2c.savefig(output_dir / "binary_projections.png")
 
+        print("Plotting regions...")
         fig3, ax3 = plot_regions(controller)
         fig3.savefig(output_dir / "regions.png")
         
+        print("Plotting paths...")
         fig4, ax4 = plot_paths(controller, region_colorcode=True)
         fig4.savefig(output_dir / "paths.png")
         
+        print("Plotting projections with paths...")
         fig5, ax5 = plot_projections_w_paths(controller, region_colorcode=True)
         fig5.savefig(output_dir / "projections_w_paths.png")
         
