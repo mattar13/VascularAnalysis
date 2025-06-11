@@ -914,7 +914,13 @@ class VesselTracer:
         
         return region_map
 
-    def get_projection(self, axis: Union[int, List[int]], operation: str = 'mean', volume_type: str = 'binary') -> np.ndarray:
+    def get_projection(self, 
+                      axis: Union[int, List[int]], 
+                      operation: str = 'mean', 
+                      volume_type: str = 'binary',
+                      z_range: Optional[Tuple[int, int]] = None,
+                      y_range: Optional[Tuple[int, int]] = None,
+                      x_range: Optional[Tuple[int, int]] = None) -> np.ndarray:
         """Generate a projection of the specified volume along specified axis/axes.
         
         Args:
@@ -933,6 +939,9 @@ class VesselTracer:
                 - 'background': Background volume from median filtering
                 - 'volume': Current processed volume
                 - 'region_map': Region map volume with region labels
+            z_range: Optional tuple of (start, end) for z dimension
+            y_range: Optional tuple of (start, end) for y dimension
+            x_range: Optional tuple of (start, end) for x dimension
                 
         Returns:
             np.ndarray: Projected image
@@ -975,22 +984,22 @@ class VesselTracer:
         else:
             raise ValueError(f"volume_type must be one of ['binary', 'background', 'volume', 'region_map']")
             
-        # Get projection function
-        proj_func = valid_ops[operation]
-        
         # Create slice objects for each dimension
         slices = [slice(None)] * 3  # Default to full range for all dimensions
         
         # Update slices based on provided ranges
-        if zrng is not None:
-            slices[0] = slice(zrng[0], zrng[1])
-        if yrng is not None:
-            slices[1] = slice(yrng[0], yrng[1])
-        if xrng is not None:
-            slices[2] = slice(xrng[0], xrng[1])
+        if z_range is not None:
+            slices[0] = slice(z_range[0], z_range[1])
+        if y_range is not None:
+            slices[1] = slice(y_range[0], y_range[1])
+        if x_range is not None:
+            slices[2] = slice(x_range[0], x_range[1])
             
         # Apply slices to volume
-        volume_slice = self.binary[tuple(slices)]
+        volume = volume[tuple(slices)]
+            
+        # Get projection function
+        proj_func = valid_ops[operation]
         
         # Calculate projection
         if isinstance(axis, list):
