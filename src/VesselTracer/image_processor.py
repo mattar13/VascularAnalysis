@@ -231,39 +231,35 @@ class ImageProcessor:
             self._log("ROI extraction complete", level=1, timing=time.time() - start_time)
             return roi_model
 
-    def _process_z_slice(self, z_slice: np.ndarray, median_filter_size: int) -> Tuple[np.ndarray, np.ndarray]:
-        """Process a single z-slice for median filtering.
+    def _process_z_slice(self, z_slice: np.ndarray, median_filter_size: int) -> np.ndarray:
+        """Process a single z-slice for median filtering to estimate background.
         
         Args:
             z_slice: 2D array representing a single z-slice
             median_filter_size: Size of median filter
             
         Returns:
-            Tuple containing (background_slice, corrected_slice)
+            Background slice estimated using median filter
         """
         # Create background image using median filter
         background_slice = median_filter(z_slice, size=median_filter_size)
         
-        # Subtract background from original
-        corrected_slice = z_slice - background_slice
-        
-        return background_slice, corrected_slice
+        return background_slice
 
-    def median_filter_background_subtraction(self, image_like: Union[ImageModel, ROI]) -> Tuple[np.ndarray, np.ndarray]:
+    def estimate_background(self, image_like: Union[ImageModel, ROI]) -> np.ndarray:
         """Apply median filter for background subtraction using multithreading.
         
-        Creates a background image using median filtering and subtracts it from 
-        the original image. This technique is commonly used for background 
-        correction in microscopy images.
+        Creates a background image using median filtering. This technique is commonly 
+        used for background estimation in microscopy images.
         
         Args:
             image_like: ImageModel or ROI object containing the volume to process
             
         Returns:
-            Tuple of (corrected_volume, background_volume)
+            np.ndarray: Estimated background volume
         """
         start_time = time.time()
-        self._log("Applying median filter for background subtraction...", level=1)
+        self._log("Estimating background using median filter...", level=1)
         
         if image_like.volume is None:
             raise ValueError("No volume data available for median filtering")
@@ -282,21 +278,16 @@ class ImageProcessor:
             # Create background image using median filter
             gpu_background = cp_ndimage.median_filter(gpu_volume, size=median_filter_size)
             
-            # Subtract background from original
-            gpu_corrected = gpu_volume - gpu_background
-            
             # Convert back to CPU
             background_image = cp.asnumpy(gpu_background)
-            corrected_volume = cp.asnumpy(gpu_corrected)
         else:
             self._log("Using CPU multithreading for median filtering", level=1)
             
             # Get number of z-slices
             n_slices = image_like.volume.shape[0]
             
-            # Create empty arrays for results
+            # Create empty array for background
             background_image = np.zeros_like(image_like.volume)
-            corrected_volume = np.zeros_like(image_like.volume)
             
             # Process slices in parallel
             with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -310,16 +301,15 @@ class ImageProcessor:
                 for future in concurrent.futures.as_completed(future_to_slice):
                     z = future_to_slice[future]
                     try:
-                        background_slice, corrected_slice = future.result()
+                        background_slice = future.result()
                         background_image[z] = background_slice
-                        corrected_volume[z] = corrected_slice
                     except Exception as e:
                         self._log(f"Error processing slice {z}: {str(e)}", level=1)
         
-        self._log("Median filter background subtraction complete", level=1, timing=time.time() - start_time)
-        self._log(f"Background subtracted volume range: [{corrected_volume.min():.3f}, {corrected_volume.max():.3f}]", level=2)
+        self._log("Background estimation complete", level=1, timing=time.time() - start_time)
+        self._log(f"Background volume range: [{background_image.min():.3f}, {background_image.max():.3f}]", level=2)
         
-        return corrected_volume, background_image
+        return background_image
 
     def detrend_volume(self, image_like: Union[ImageModel, ROI]) -> np.ndarray:
         """Remove linear trend from volume along z-axis.

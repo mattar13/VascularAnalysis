@@ -165,10 +165,18 @@ class VesselAnalysisController:
             else:
                 self._log("Using full volume as ROI", level=1)
                 self.roi_model = self.image_model
+            #Normalize? 
+            self.roi_model.volume = self.processor.normalize_image(self.roi_model)
+
+            # 2. Background estimation and subtraction using ImageProcessor
+            self._log("2. Background estimation...", level=1)
+            self.roi_model.background = self.processor.estimate_background(self.roi_model)
             
-            # 2. Background subtraction using ImageProcessor
-            self._log("2. Background subtraction...", level=1)
-            self.roi_model.volume, self.roi_model.background = self.processor.median_filter_background_subtraction(self.roi_model)
+            # Perform background subtraction in controller
+            self._log("2b. Background subtraction...", level=1)
+            self.roi_model.volume = self.roi_model.volume - self.roi_model.background
+            
+            self._log(f"Background subtracted volume range: [{self.roi_model.volume.min():.3f}, {self.roi_model.volume.max():.3f}]", level=2)
             # 3. Detrend using ImageProcessor
             self._log("3. Detrending...", level=1)
             self.roi_model.volume = self.processor.detrend_volume(self.roi_model)

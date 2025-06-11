@@ -7,7 +7,7 @@ from VesselTracer.plotting import plot_projections, plot_regions, plot_paths, pl
 import numpy as np
 import pandas as pd
 
-def main(input_path, output_dir=None):
+def main(input_path, config_path, output_dir=None):
     # Setup input file 
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
@@ -21,7 +21,7 @@ def main(input_path, output_dir=None):
     try:
         # Initialize controller (replaces the old VesselTracer)
         print(f"Loading file: {input_path}")
-        controller = VesselAnalysisController(input_path)
+        controller = VesselAnalysisController(input_path, config_path)
         #controller.activate_gpu()
         
         # Run the complete pipeline using the controller
@@ -85,5 +85,6 @@ def main(input_path, output_dir=None):
 if __name__ == "__main__":
     print("Starting VesselTracer...")
     #input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
+    config_path = Path("C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\config\\default_vessel_config.yaml")
     input_path = Path("F:\\240207_002 (1).czi")
-    main(input_path)
+    main(input_path, config_path)
