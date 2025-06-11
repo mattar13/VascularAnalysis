@@ -9,12 +9,14 @@ from typing import Optional, Dict, Any, Tuple, Union, List
 @dataclass
 class ImageModel:
     """Data model for storing image volumes and associated data."""
-    
+    input_data: Optional[np.ndarray] = None
     volume: Optional[np.ndarray] = None
     binary: Optional[np.ndarray] = None
     background: Optional[np.ndarray] = None
     region: Optional[np.ndarray] = None
     paths: Optional[Dict[str, Any]] = None
+    filepath: Optional[Union[str, Path]] = None
+    pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)
     
     # Image properties
     pixel_size_x: float = 1.0
@@ -22,9 +24,26 @@ class ImageModel:
     pixel_size_z: float = 1.0
     
     def __post_init__(self):
-        """Initialize paths as empty dict if None."""
+        """Initialize paths and handle automatic loading based on filepath or input_data."""
         if self.paths is None:
             self.paths = {}
+            
+        # Handle automatic loading
+        if self.filepath is not None:
+            # Convert to Path object if string
+            if isinstance(self.filepath, str):
+                self.filepath = Path(self.filepath)
+                
+            # Determine file type and load
+            if self.filepath.suffix.lower() == '.czi':
+                self.load_from_czi(self.filepath)
+            elif self.filepath.suffix.lower() in ['.tif', '.tiff']:
+                self.load_from_tiff(self.filepath, self.pixel_sizes)
+            else:
+                raise ValueError(f"Unsupported file format: {self.filepath.suffix}")
+        elif self.input_data is not None:
+            # Load from numpy array
+            self.load_from_array(self.input_data, self.pixel_sizes)
     
     def load_from_czi(self, file_path: Path) -> None:
         """Load CZI file and extract pixel sizes."""
