@@ -459,8 +459,25 @@ class VesselTracer:
             self._log("ROI extraction complete", level=1, timing=time.time() - start_time)
             return self.roi
     
+    def _process_z_slice(self, z_slice: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Process a single z-slice for median filtering.
+        
+        Args:
+            z_slice: 2D array representing a single z-slice
+            
+        Returns:
+            Tuple containing (background_slice, corrected_slice)
+        """
+        # Create background image using median filter
+        background_slice = median_filter(z_slice, size=self.median_filter_size)
+        
+        # Subtract background from original
+        corrected_slice = z_slice - background_slice
+        
+        return background_slice, corrected_slice
+
     def median_filter(self) -> np.ndarray:
-        """Apply median filter for background subtraction.
+        """Apply median filter for background subtraction using multithreading.
         
         Creates a background image using median filtering and subtracts it from 
         the original image. This technique is commonly used for background 
@@ -492,11 +509,36 @@ class VesselTracer:
             background_image = cp.asnumpy(gpu_background)
             self.roi = cp.asnumpy(gpu_corrected)
         else:
-            # Create background image using median filter
-            background_image = median_filter(self.roi, size=self.median_filter_size)
+            self._log("Using CPU multithreading for median filtering", level=2)
+            import concurrent.futures
+            from itertools import repeat
             
-            # Subtract background from original
-            self.roi = original_roi - background_image
+            # Get number of z-slices
+            n_slices = self.roi.shape[0]
+            
+            # Create empty arrays for results
+            background_image = np.zeros_like(self.roi)
+            corrected_roi = np.zeros_like(self.roi)
+            
+            # Process slices in parallel
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                # Submit all z-slices for processing
+                future_to_slice = {
+                    executor.submit(self._process_z_slice, self.roi[z]): z 
+                    for z in range(n_slices)
+                }
+                
+                # Process results as they complete
+                for future in concurrent.futures.as_completed(future_to_slice):
+                    z = future_to_slice[future]
+                    try:
+                        background_slice, corrected_slice = future.result()
+                        background_image[z] = background_slice
+                        corrected_roi[z] = corrected_slice
+                    except Exception as e:
+                        self._log(f"Error processing slice {z}: {str(e)}", level=1)
+            
+            self.roi = corrected_roi
         
         # Store the background image for reference
         self.background = background_image
