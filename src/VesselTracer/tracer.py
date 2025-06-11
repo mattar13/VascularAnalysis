@@ -1029,6 +1029,7 @@ class VesselTracer:
 
     #These are pipeline functions used to run the analysis
     def run_analysis(self,
+                    split_paths: bool = False,
                     remove_dead_frames: bool = True,
                     dead_frame_threshold: float = 1.5,
                     skip_smoothing: bool = False,
