@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 def main(input_path, output_dir=None):
-    # Setup input file
+    # Setup input file 
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
     # Create output directory name based on input file name and timestamp
