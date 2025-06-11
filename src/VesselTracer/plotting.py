@@ -15,7 +15,7 @@ def show_max_projection(vol: np.ndarray, ax: Optional[plt.Axes] = None) -> None:
     ax.imshow(np.max(vol, axis=0))
     ax.axis('off')
 
-def plot_projections(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_coded: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
+def plot_projections(tracer, figsize=(10, 10), mode: str = 'roi', depth_coded: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections and intensity profile.
     
     Creates a figure with:
@@ -175,7 +175,7 @@ def plot_paths_on_axis(tracer, ax,
     # Use provided paths or all paths
     # paths = paths_to_plot if paths_to_plot is not None else tracer.paths
     paths = tracer.paths
-    
+
     # Plot each path
     for path_id, path in paths.items():
         path_coords = path['coordinates']
