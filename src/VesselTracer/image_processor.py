@@ -244,7 +244,7 @@ class ImageProcessor:
         
         return background_slice, corrected_slice
 
-    def median_filter_background_subtraction(self, roi_model: ROI) -> Tuple[np.ndarray, np.ndarray]:
+    def median_filter_background_subtraction(self, image_model: ROI) -> Tuple[np.ndarray, np.ndarray]:
         """Apply median filter for background subtraction using multithreading.
         
         Creates a background image using median filtering and subtracts it from 
@@ -260,22 +260,22 @@ class ImageProcessor:
         start_time = time.time()
         self._log("Applying median filter for background subtraction...", level=1)
         
-        if roi_model.volume is None:
+        if image_model.volume is None:
             raise ValueError("No volume data available for median filtering")
             
         # Get pixel conversions
-        pixel_conversions = self._get_pixel_conversions(roi_model)
+        pixel_conversions = self._get_pixel_conversions(image_model)
         median_filter_size = pixel_conversions['median_filter_size']
         
         self._log(f"Median filter size: {median_filter_size} pixels", level=2)
         
         # Store original ROI before processing
-        original_roi = roi_model.volume.copy()
+        original_roi = image_model.volume.copy()
         
         if self.use_gpu and GPU_AVAILABLE:
             self._log("Using GPU acceleration for median filtering", level=2)
             # Convert to GPU array
-            gpu_roi = cp.asarray(roi_model.volume)
+            gpu_roi = cp.asarray(image_model.volume)
             
             # Create background image using median filter
             gpu_background = cp_ndimage.median_filter(gpu_roi, size=median_filter_size)
@@ -290,17 +290,17 @@ class ImageProcessor:
             self._log("Using CPU multithreading for median filtering", level=2)
             
             # Get number of z-slices
-            n_slices = roi_model.volume.shape[0]
+            n_slices = image_model.volume.shape[0]
             
             # Create empty arrays for results
-            background_image = np.zeros_like(roi_model.volume)
-            corrected_volume = np.zeros_like(roi_model.volume)
+            background_image = np.zeros_like(image_model.volume)
+            corrected_volume = np.zeros_like(image_model.volume)
             
             # Process slices in parallel
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 # Submit all z-slices for processing
                 future_to_slice = {
-                    executor.submit(self._process_z_slice, roi_model.volume[z], median_filter_size): z 
+                    executor.submit(self._process_z_slice, image_model.volume[z], median_filter_size): z 
                     for z in range(n_slices)
                 }
                 
@@ -315,14 +315,14 @@ class ImageProcessor:
                         self._log(f"Error processing slice {z}: {str(e)}", level=1)
         
         # Update the ROI model
-        roi_model.volume = corrected_volume
-        
+            image_model.volume = corrected_volume
+        image_model.background = background_image
         self._log("Median filter background subtraction complete", level=1, timing=time.time() - start_time)
-        self._log(f"Background subtracted ROI range: [{roi_model.volume.min():.3f}, {roi_model.volume.max():.3f}]", level=2)
+        self._log(f"Background subtracted ROI range: [{image_model.volume.min():.3f}, {image_model.volume.max():.3f}]", level=2)
         
         return corrected_volume, background_image
 
-    def detrend_volume(self, roi_model: ROI) -> np.ndarray:
+    def detrend_volume(self, image_model: ROI) -> np.ndarray:
         """Remove linear trend from volume along z-axis.
         
         Corrects for linear attenuation in depth by:
@@ -339,13 +339,13 @@ class ImageProcessor:
         start_time = time.time()
         self._log("Detrending volume...", level=1)
         
-        if roi_model.volume is None:
+        if image_model.volume is None:
             raise ValueError("No volume data available for detrending")
             
-        Z, Y, X = roi_model.volume.shape
+        Z, Y, X = image_model.volume.shape
         
         # Calculate mean intensity profile
-        z_profile = np.mean(roi_model.volume, axis=(1,2))
+        z_profile = np.mean(image_model.volume, axis=(1,2))
         z_positions = np.arange(Z)
         
         # Fit linear trend
@@ -358,17 +358,17 @@ class ImageProcessor:
         correction = trend / np.mean(trend)
         
         # Apply correction to each z-slice
-        detrended = np.zeros_like(roi_model.volume)
+        detrended = np.zeros_like(image_model.volume)
         for z in range(Z):
-            detrended[z] = roi_model.volume[z] / correction[z]
+            detrended[z] = image_model.volume[z] / correction[z]
             
         # Update the ROI model
-        roi_model.volume = detrended
+        image_model.volume = detrended
         
         self._log("Detrending complete", level=1, timing=time.time() - start_time)
         return detrended
 
-    def smooth_volume(self, roi_model: ROI) -> np.ndarray:
+    def smooth_volume(self, image_model: ROI) -> np.ndarray:
         """Apply regular Gaussian smoothing to volume with proper handling of anisotropic voxels.
         
         This is used for noise reduction and vessel enhancement.
@@ -383,11 +383,11 @@ class ImageProcessor:
         start_time = time.time()
         self._log("Applying regular smoothing...", level=1)
         
-        if roi_model.volume is None:
+        if image_model.volume is None:
             raise ValueError("No volume data available for smoothing")
             
         # Get pixel conversions
-        pixel_conversions = self._get_pixel_conversions(roi_model)
+        pixel_conversions = self._get_pixel_conversions(image_model)
         gauss_sigma = pixel_conversions['gauss_sigma']
         
         self._log(f"Using regular smoothing sigma (pixels):", level=2)
@@ -398,7 +398,7 @@ class ImageProcessor:
         if self.use_gpu and GPU_AVAILABLE:
             self._log("Using GPU acceleration for smoothing", level=2)
             # Convert to GPU array
-            gpu_roi = cp.asarray(roi_model.volume)
+            gpu_roi = cp.asarray(image_model.volume)
             
             # Apply 3D Gaussian filter with different sigma for each dimension
             gpu_smoothed = cp_ndimage.gaussian_filter(gpu_roi, sigma=gauss_sigma)
@@ -407,15 +407,15 @@ class ImageProcessor:
             smoothed_volume = cp.asnumpy(gpu_smoothed)
         else:
             # Apply 3D Gaussian filter with different sigma for each dimension
-            smoothed_volume = gaussian_filter(roi_model.volume, sigma=gauss_sigma)
+            smoothed_volume = gaussian_filter(image_model.volume, sigma=gauss_sigma)
         
         # Update the ROI model
-        roi_model.volume = smoothed_volume
+        image_model.volume = smoothed_volume
         
         self._log("Regular smoothing complete", level=1, timing=time.time() - start_time)
         return smoothed_volume
 
-    def binarize_volume(self, roi_model: ROI, method: str = None) -> np.ndarray:
+    def binarize_volume(self, image_model: ROI, method: str = None) -> np.ndarray:
         """Binarize the smoothed volume using triangle thresholding.
         
         This method applies triangle thresholding to the entire 3D volume at once,
@@ -432,7 +432,7 @@ class ImageProcessor:
         start_time = time.time()
         self._log("Binarizing volume...", level=1)
         
-        if roi_model.volume is None:
+        if image_model.volume is None:
             raise ValueError("No volume data available for binarization")
             
         # Use method from config if not specified
@@ -440,14 +440,14 @@ class ImageProcessor:
             method = self.config.binarization_method
             
         # Get pixel conversions
-        pixel_conversions = self._get_pixel_conversions(roi_model)
+        pixel_conversions = self._get_pixel_conversions(image_model)
         close_radius = pixel_conversions['close_radius']
         
         # Calculate threshold using entire ROI
         if method.lower() == 'triangle':
-            thresh = threshold_triangle(roi_model.volume.ravel())
+            thresh = threshold_triangle(image_model.volume.ravel())
         elif method.lower() == 'otsu':
-            thresh = threshold_otsu(roi_model.volume.ravel())
+            thresh = threshold_otsu(image_model.volume.ravel())
         else:
             raise ValueError(f"Unknown binarization method: {method}")
             
@@ -456,7 +456,7 @@ class ImageProcessor:
         if self.use_gpu and GPU_AVAILABLE:
             self._log("Using GPU acceleration for binarization", level=2)
             # Convert to GPU array
-            gpu_roi = cp.asarray(roi_model.volume)
+            gpu_roi = cp.asarray(image_model.volume)
             
             # Apply threshold on GPU
             bw_vol = gpu_roi > thresh
@@ -465,7 +465,7 @@ class ImageProcessor:
             bw_vol = cp.asnumpy(bw_vol)
         else:
             # Apply threshold to entire ROI at once
-            bw_vol = roi_model.volume > thresh
+            bw_vol = image_model.volume > thresh
         
         # Remove small objects in 3D
         bw_vol = remove_small_objects(bw_vol, min_size=self.config.min_object_size)
@@ -477,11 +477,11 @@ class ImageProcessor:
             bw_vol = binary_closing(bw_vol, ball(close_radius))
             
         # Store in ROI model
-        roi_model.binary = bw_vol
+        image_model.binary = bw_vol
         self._log("Binarization complete", level=1, timing=time.time() - start_time)
         return bw_vol
 
-    def determine_regions(self, roi_model: ROI) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
+    def determine_regions(self, image_model: ROI) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
         """Determine vessel regions based on the mean z-profile.
         
         Uses peak finding to identify distinct vessel layers and calculates
@@ -496,11 +496,11 @@ class ImageProcessor:
         """
         self._log("Determining vessel regions...", level=1)
         
-        if roi_model.binary is None:
+        if image_model.binary is None:
             raise ValueError("No binary data available for region analysis")
             
         # Get mean z-profile (xy projection)
-        mean_zprofile = np.mean(roi_model.binary, axis=(1,2))
+        mean_zprofile = np.mean(image_model.binary, axis=(1,2))
         
         # Find peaks
         peaks, _ = find_peaks(mean_zprofile, distance=self.config.region_peak_distance)
@@ -524,7 +524,7 @@ class ImageProcessor:
         
         return region_bounds
 
-    def create_region_map_volume(self, roi_model: ROI, region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]]) -> np.ndarray:
+    def create_region_map_volume(self, image_model: ROI, region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]]) -> np.ndarray:
         """Create a volume where each z-position is labeled with its region number.
         
         Creates a 3D array the same size as the volume where each voxel is assigned
@@ -541,11 +541,11 @@ class ImageProcessor:
         Returns:
             np.ndarray: Volume with region labels (0-3) for each voxel
         """
-        if roi_model.volume is None:
+        if image_model.volume is None:
             raise ValueError("No volume data available for region map creation")
         
         # Create region map with same shape as ROI
-        Z, Y, X = roi_model.volume.shape
+        Z, Y, X = image_model.volume.shape
         region_map = np.zeros((Z, Y, X), dtype=np.uint8)
         
         # Define region number mapping
@@ -562,7 +562,7 @@ class ImageProcessor:
             region_map[z, :, :] = region_number
         
         # Store in ROI model
-        roi_model.region = region_map
+        image_model.region = region_map
         self._log(f"Created region map volume with shape {region_map.shape}", level=2)
         self._log(f"Region assignments: 0=unknown, 1=superficial, 2=intermediate, 3=deep", level=2)
         
@@ -592,7 +592,8 @@ class ImageProcessor:
                 return region
         return 'unknown'
 
-    def trace_vessel_paths(self, roi_model: ROI, region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]], split_paths: bool = False) -> Tuple[Dict[str, Any], Any]:
+
+    def trace_vessel_paths(self, image_model: ROI, region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]], split_paths: bool = False) -> Tuple[Dict[str, Any], Any]:
         """Create vessel skeleton and trace paths.
         
         Args:
@@ -608,11 +609,11 @@ class ImageProcessor:
         start_time = time.time()
         self._log("Tracing vessel paths...", level=1)
         
-        if roi_model.binary is None:
+        if image_model.binary is None:
             raise ValueError("No binary data available for path tracing")
             
-        self._log(f"Skeletonizing binary volume of shape {roi_model.binary.shape}", level=2)
-        ske = sk_skeletonize(roi_model.binary)
+        self._log(f"Skeletonizing binary volume of shape {image_model.binary.shape}", level=2)
+        ske = sk_skeletonize(image_model.binary)
         self._log(f"Skeletonized volume of shape {ske.shape}", level=2)
         
         # Create Skeleton object for path analysis
