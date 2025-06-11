@@ -39,7 +39,7 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'binary', depth_coded
         Tuple of (figure, dict of axes)
     """
     # Validate mode
-    valid_modes = ['volume', 'roi', 'binary', 'region']
+    valid_modes = ['volume', 'roi', 'background', 'binary', 'region']
     if mode not in valid_modes:
         raise ValueError(f"Mode must be one of {valid_modes}")
     
@@ -58,6 +58,8 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'binary', depth_coded
         if not hasattr(tracer, 'region_map'):
             tracer.create_region_map_volume()
         data = tracer.region_map
+    elif mode == 'background':
+        data = tracer.background
     
     # Create figure with gridspec
     fig = plt.figure(figsize=figsize)
@@ -150,7 +152,7 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'binary', depth_coded
 
 def plot_paths_on_axis(tracer, ax, 
                        projection='xy', region_colorcode: bool = False, is_3d: bool = False, 
-                       linedwith = 5, alpha = 0.8) -> None:
+                       linedwith = 5, alpha = 0.8, invert_yaxis: bool = False) -> None:
     """Plot vessel paths on a given axis.
     
     Args:
@@ -225,6 +227,9 @@ def plot_paths_on_axis(tracer, ax,
                     ax.plot(plot_x, plot_y, plot_z, 'r-', linewidth=linedwith, alpha=alpha)
                 else:
                     ax.plot(plot_x, plot_y, 'r-', linewidth=linedwith, alpha=alpha)
+    
+    if invert_yaxis:
+        ax.invert_yaxis()
 
 def plot_paths(tracer, figsize=(15, 7), region_colorcode: bool = False, projection: str = 'xy') -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Plot vessel paths in both 2D and 3D projections.
