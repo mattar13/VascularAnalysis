@@ -60,6 +60,7 @@ def plot_projections(tracer, figsize=(10, 10), mode: str = 'binary', depth_coded
         data = tracer.roi_model.region
     elif mode == 'background':
         data = tracer.roi_model.background
+    print(f"Data shape: {data.shape}")
     
     # Create figure with gridspec
     fig = plt.figure(figsize=figsize)
