@@ -126,7 +126,7 @@ class VesselAnalysisController:
         self.config.save_metadata(output_path, pixel_sizes, input_type, processing_status, format)
 
     def run_analysis(self,
-                    remove_dead_frames: bool = True,
+                    remove_dead_frames: bool = False,
                     dead_frame_threshold: float = 1.5,
                     skip_smoothing: bool = False,
                     skip_binarization: bool = False,
