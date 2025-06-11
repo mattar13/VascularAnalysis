@@ -2,6 +2,7 @@ from typing import Optional, Dict, Any, Tuple
 import numpy as np
 from skimage.morphology import skeletonize as sk_skeletonize
 from skan import Skeleton, summarize
+from scipy.signal import find_peaks, peak_widths
 import pandas as pd
 import time
 
@@ -11,7 +12,8 @@ class VesselTracer:
     """Vessel tracing class focused solely on skeletonization and path analysis.
     
     This class takes binary images and creates vessel skeletons and path dictionaries.
-    It does not handle image preprocessing, ROI extraction, or pipeline management.
+    It also handles region determination and analysis since these are closely related
+    to vessel tracing operations.
     """
     
     def __init__(self, config: Optional[VesselTracerConfig] = None, verbose: int = 2):
@@ -29,6 +31,9 @@ class VesselTracer:
         self.stats = None
         self.n_paths = 0
         
+        # Initialize region storage
+        self.region_bounds = {}
+        
     def _log(self, message: str, level: int = 1, timing: Optional[float] = None):
         """Log a message with appropriate verbosity level.
         
@@ -42,6 +47,116 @@ class VesselTracer:
                 print(f"{message} (took {timing:.2f}s)")
             else:
                 print(message)
+    
+    def determine_regions(self, binary_volume: np.ndarray) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
+        """Determine vessel regions based on the mean z-profile.
+        
+        Uses peak finding to identify distinct vessel layers and calculates
+        their boundaries based on peak widths.
+        
+        Args:
+            binary_volume: 3D binary numpy array containing vessel data
+            
+        Returns:
+            Dictionary mapping region names to tuples of:
+            (peak_position, sigma, (lower_bound, upper_bound))
+        """
+        self._log("Determining vessel regions...", level=1)
+        
+        if binary_volume is None:
+            raise ValueError("Binary volume cannot be None")
+            
+        if not isinstance(binary_volume, np.ndarray):
+            raise ValueError("Binary volume must be a numpy array")
+            
+        if binary_volume.ndim != 3:
+            raise ValueError("Binary volume must be 3D")
+            
+        # Get mean z-profile (xy projection)
+        mean_zprofile = np.mean(binary_volume, axis=(1,2))
+        
+        # Find peaks
+        peaks, _ = find_peaks(mean_zprofile, distance=self.config.region_peak_distance)
+        
+        # Calculate peak widths
+        widths_all, _, _, _ = peak_widths(
+            mean_zprofile, peaks, rel_height=self.config.region_height_ratio)
+        
+        # Convert widths to sigmas
+        sigmas = widths_all / (self.config.region_n_stds * np.sqrt(2 * np.log(2)))
+        
+        # Print peak information
+        for i, pk in enumerate(peaks):
+            self._log(f"Peak at z={pk:.1f}: σ ≈ {sigmas[i]:.2f}", level=2)
+        
+        # Create region bounds dictionary
+        region_bounds = {
+            region: (mu, sigma, (mu - sigma, mu + sigma))
+            for region, mu, sigma in zip(self.config.regions, peaks, sigmas)
+        }
+        
+        # Store region bounds
+        self.region_bounds = region_bounds
+        
+        return region_bounds
+
+    def create_region_map_volume(self, binary_volume: np.ndarray, 
+                               region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None) -> np.ndarray:
+        """Create a volume where each z-position is labeled with its region number.
+        
+        Creates a 3D array the same size as the volume where each voxel is assigned
+        a region number based on its z-position:
+        - 0: Unknown/outside regions
+        - 1: Superficial
+        - 2: Intermediate  
+        - 3: Deep
+        
+        Args:
+            binary_volume: 3D binary numpy array to create region map for
+            region_bounds: Optional dictionary of region bounds. If None, uses stored region_bounds.
+            
+        Returns:
+            np.ndarray: Volume with region labels (0-3) for each voxel
+        """
+        if binary_volume is None:
+            raise ValueError("Binary volume cannot be None")
+        
+        if region_bounds is None:
+            region_bounds = self.region_bounds
+            
+        if not region_bounds:
+            raise ValueError("No region bounds available. Run determine_regions first.")
+        
+        # Create region map with same shape as volume
+        Z, Y, X = binary_volume.shape
+        region_map = np.zeros((Z, Y, X), dtype=np.uint8)
+        
+        # Define region number mapping
+        region_numbers = {
+            'superficial': 1,
+            'intermediate': 2,
+            'deep': 3
+        }
+        
+        # Assign region numbers to each z-slice
+        for z in range(Z):
+            region_name = self._get_region_for_z(z, region_bounds)
+            region_number = region_numbers.get(region_name, 0)  # 0 for unknown
+            region_map[z, :, :] = region_number
+        
+        self._log(f"Created region map volume with shape {region_map.shape}", level=2)
+        self._log(f"Region assignments: 0=unknown, 1=superficial, 2=intermediate, 3=deep", level=2)
+        
+        # Log region statistics
+        unique_regions, counts = np.unique(region_map, return_counts=True)
+        total_voxels = region_map.size
+        for region_num, count in zip(unique_regions, counts):
+            region_names = {0: 'unknown', 1: 'superficial', 2: 'intermediate', 3: 'deep'}
+            region_name = region_names.get(region_num, f'region_{region_num}')
+            percentage = (count / total_voxels) * 100
+            self._log(f"  {region_name}: {count:,} voxels ({percentage:.1f}%)", level=2)
+        
+        return region_map
     
     def trace_paths(self, binary_volume: np.ndarray, 
                    region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None,
@@ -74,6 +189,10 @@ class VesselTracer:
         if binary_volume.dtype != bool:
             binary_volume = binary_volume.astype(bool)
             
+        # Use provided region_bounds or stored ones
+        if region_bounds is None:
+            region_bounds = self.region_bounds
+            
         self._log(f"Skeletonizing binary volume of shape {binary_volume.shape}", level=2)
         ske = sk_skeletonize(binary_volume)
         self._log(f"Skeletonized volume of shape {ske.shape}", level=2)
@@ -100,7 +219,7 @@ class VesselTracer:
                 if len(path_coords) == 0:
                     continue
                 
-                if split_paths and region_bounds is not None:
+                if split_paths and region_bounds:
                     # Split path into segments based on region boundaries
                     path_segments = self._split_path_at_region_boundaries(path_coords, region_bounds)
                     
@@ -381,4 +500,5 @@ class VesselTracer:
         """Clear all traced paths and statistics."""
         self.paths = {}
         self.stats = None
-        self.n_paths = 0 
+        self.n_paths = 0
+        self.region_bounds = {} 
