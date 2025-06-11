@@ -15,7 +15,7 @@ def show_max_projection(vol: np.ndarray, ax: Optional[plt.Axes] = None) -> None:
     ax.imshow(np.max(vol, axis=0))
     ax.axis('off')
 
-def plot_projections(tracer, figsize=(10, 10), mode: str = 'roi', depth_coded: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
+def plot_projections(tracer, figsize=(10, 10), mode: str = 'binary', depth_coded: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections and intensity profile.
     
     Creates a figure with:
@@ -272,7 +272,7 @@ def plot_paths(tracer, figsize=(15, 7), region_colorcode: bool = False, projecti
     plt.tight_layout()
     return fig, {'2d': ax_2d, '3d': ax_3d}
 
-def plot_projections_w_paths(tracer, figsize=(10, 10), mode: str = 'smoothed', depth_coded: bool = False, region_colorcode: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
+def plot_projections_w_paths(tracer, figsize=(10, 10), mode: str = 'binary', depth_coded: bool = False, region_colorcode: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections with vessel paths.
     
     Creates a figure with:
