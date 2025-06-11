@@ -173,7 +173,8 @@ def plot_paths_on_axis(tracer, ax,
     }
     
     # Use provided paths or all paths
-    paths = paths_to_plot if paths_to_plot is not None else tracer.paths
+    # paths = paths_to_plot if paths_to_plot is not None else tracer.paths
+    paths = tracer.paths
     
     # Plot each path
     for path_id, path in paths.items():
