@@ -8,6 +8,9 @@ import yaml
 class VesselTracerConfig:
     """Configuration class for VesselTracer parameters."""
     
+    # Configuration file path
+    config_path: Optional[Union[str, Path]] = None
+    
     # ROI settings
     find_roi: bool = True
     micron_roi: float = 500.0
@@ -38,9 +41,13 @@ class VesselTracerConfig:
     verbose: int = 2
     
     def __post_init__(self):
-        """Initialize default regions if not provided."""
+        """Initialize default regions and automatically load config if path provided."""
         if self.regions is None:
             self.regions = ['superficial', 'intermediate', 'deep']
+            
+        # Automatically load config if path is provided
+        if self.config_path is not None:
+            self.load_config(self.config_path)
 
     def load_config(self, config_path: Optional[Union[str, Path]] = None) -> None:
         """Load configuration from YAML file."""
