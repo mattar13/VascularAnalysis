@@ -5,6 +5,7 @@ from scipy.ndimage import gaussian_filter, median_filter
 from skimage.morphology import remove_small_objects, binary_closing, binary_opening, ball
 from skimage.filters import threshold_otsu, threshold_triangle
 import concurrent.futures
+from scipy.signal import find_peaks, peak_widths
 
 # Try to import CuPy for GPU acceleration
 try:
@@ -527,4 +528,130 @@ class ImageProcessor:
         image_like.binary = closed_volume
         
         self._log("Morphological closing complete", level=1, timing=time.time() - start_time)
-        return closed_volume 
+        return closed_volume
+
+    def determine_regions(self, image_like: Union[ImageModel, ROI]) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
+        """Determine vessel regions based on the mean z-profile.
+        
+        Uses peak finding to identify distinct vessel layers and calculates
+        their boundaries based on peak widths.
+        
+        Args:
+            image_like: ImageModel or ROI object containing the volume to analyze
+            
+        Returns:
+            Dictionary mapping region names to tuples of:
+            (peak_position, sigma, (lower_bound, upper_bound))
+        """
+        start_time = time.time()
+        self._log("Determining vessel regions...", level=1)
+        
+        if image_like.volume is None:
+            raise ValueError("No volume data available for region determination")
+            
+        # Get mean z-profile (xy projection)
+        mean_zprofile = image_like.get_projection([1, 2], operation='mean')
+        
+        # Find peaks
+        peaks, _ = find_peaks(mean_zprofile, distance=self.config.region_peak_distance)
+        
+        # Calculate peak widths
+        widths_all, _, _, _ = peak_widths(
+            mean_zprofile, peaks, rel_height=self.config.region_height_ratio)
+        
+        # Convert widths to sigmas
+        sigmas = widths_all / (self.config.region_n_stds * np.sqrt(2 * np.log(2)))
+        
+        # Print peak information
+        for i, pk in enumerate(peaks):
+            self._log(f"Peak at z={pk:.1f}: σ ≈ {sigmas[i]:.2f}", level=2)
+        
+        # Create region bounds dictionary
+        region_bounds = {
+            region: (mu, sigma, (mu - sigma, mu + sigma))
+            for region, mu, sigma in zip(self.config.regions, peaks, sigmas)
+        }
+        
+        # Store the region bounds in the image object
+        image_like.region_bounds = region_bounds
+        
+        self._log("Region determination complete", level=1, timing=time.time() - start_time)
+        return region_bounds
+
+    def create_region_map(self, image_like: Union[ImageModel, ROI], 
+                         region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None) -> np.ndarray:
+        """Create a volume where each z-position is labeled with its region number.
+        
+        Creates a 3D array the same size as the volume where each voxel is assigned
+        a region number based on its z-position:
+        - 0: Unknown/outside regions
+        - 1: Superficial
+        - 2: Intermediate  
+        - 3: Deep
+        
+        Args:
+            image_like: ImageModel or ROI object containing the volume to create region map for
+            region_bounds: Optional dictionary of region bounds. If None, uses stored region_bounds.
+            
+        Returns:
+            np.ndarray: Volume with region labels (0-3) for each voxel
+        """
+        start_time = time.time()
+        self._log("Creating region map...", level=1)
+        
+        if image_like.volume is None:
+            raise ValueError("No volume data available for region map creation")
+        
+        if region_bounds is None:
+            region_bounds = image_like.region_bounds
+            
+        if not region_bounds:
+            raise ValueError("No region bounds available. Run determine_regions first.")
+        
+        # Create region map with same shape as volume
+        Z, Y, X = image_like.volume.shape
+        region_map = np.zeros((Z, Y, X), dtype=np.uint8)
+        
+        # Define region number mapping
+        region_numbers = {
+            'superficial': 1,
+            'intermediate': 2,
+            'deep': 3
+        }
+        
+        # Assign region numbers to each z-slice
+        for z in range(Z):
+            region_name = self._get_region_for_z(z, region_bounds)
+            region_number = region_numbers.get(region_name, 0)  # 0 for unknown
+            region_map[z, :, :] = region_number
+        
+        self._log(f"Created region map with shape {region_map.shape}", level=2)
+        self._log(f"Region assignments: 0=unknown, 1=superficial, 2=intermediate, 3=deep", level=2)
+        
+        # Log region statistics
+        unique_regions, counts = np.unique(region_map, return_counts=True)
+        total_voxels = region_map.size
+        for region_num, count in zip(unique_regions, counts):
+            region_names = {0: 'unknown', 1: 'superficial', 2: 'intermediate', 3: 'deep'}
+            region_name = region_names.get(region_num, f'region_{region_num}')
+            percentage = (count / total_voxels) * 100
+            self._log(f"  {region_name}: {count:,} voxels ({percentage:.1f}%)", level=2)
+        
+        self._log("Region map creation complete", level=1, timing=time.time() - start_time)
+        return region_map
+        
+    def _get_region_for_z(self, z_coord: float, 
+                         region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]]) -> str:
+        """Determine which region a z-coordinate belongs to.
+        
+        Args:
+            z_coord: Z coordinate value
+            region_bounds: Dictionary of region bounds
+            
+        Returns:
+            Name of the region containing this z-coordinate
+        """
+        for region_name, (peak, sigma, (lower, upper)) in region_bounds.items():
+            if lower <= z_coord <= upper:
+                return region_name
+        return 'Outside' 
