@@ -141,12 +141,11 @@ class ImageProcessor:
         self._log(f"Normalized range: [{image_like.volume.min():.3f}, {image_like.volume.max():.3f}]", level=2)
         return image_like.volume
 
-    def remove_dead_frames(self, image_like: Union[ImageModel, ROI], threshold: float = 1.5) -> np.ndarray:
+    def remove_dead_frames(self, image_like: Union[ImageModel, ROI]) -> np.ndarray:
         """Remove frames with unusually low intensity (dead frames).
         
         Args:
             image_like: ImageModel or ROI object containing the volume to process
-            threshold: Multiplier of standard deviation to use as threshold
             
         Returns:
             np.ndarray: Volume with dead frames removed
@@ -159,11 +158,22 @@ class ImageProcessor:
             
         # Calculate mean intensity for each z-slice
         mean_intensities = np.mean(image_like.volume, axis=(1,2))
-        
+        threshold = self.config.dead_frame_threshold
+        print(f"Max intensity: {np.max(mean_intensities)}")
+        print(f"Min intensity: {np.min(mean_intensities)}")
+        print(f"Mean intensity: {np.mean(mean_intensities)}")
+        print(f"Std intensity: {np.std(mean_intensities)}")
+
         # Calculate statistics
         mean_intensity = np.mean(mean_intensities)
         std_intensity = np.std(mean_intensities)
+        #Use the triangle method to find the threshold
+        #threshold = threshold_triangle(mean_intensities)
+        print(f"Threshold: {threshold}")
+
+        self.config.dead_frame_threshold = threshold #Going to have to go back and save correctly
         threshold_value = mean_intensity - (threshold * std_intensity)
+        print(f"Value to threshold: {threshold_value}")
         
         # Find dead frames
         dead_frames = mean_intensities < threshold_value
@@ -175,28 +185,21 @@ class ImageProcessor:
             self._log(f"Std intensity: {std_intensity:.2f}", level=2)
             self._log(f"Threshold: {threshold_value:.2f}", level=2)
             
-            # Replace dead frames with mean of neighboring frames
-            volume = image_like.volume.copy()
-            for z in np.where(dead_frames)[0]:
-                # Get valid neighboring frames
-                neighbors = []
-                if z > 0 and not dead_frames[z-1]:
-                    neighbors.append(volume[z-1])
-                if z < len(dead_frames)-1 and not dead_frames[z+1]:
-                    neighbors.append(volume[z+1])
-                
-                if neighbors:
-                    # Replace with mean of neighbors
-                    volume[z] = np.mean(neighbors, axis=0)
-                else:
-                    # If no valid neighbors, use global mean
-                    volume[z] = np.mean(volume[~dead_frames], axis=0)
+            # Remove dead frames by keeping only valid frames
+            volume = image_like.volume[~dead_frames]
+            
+            # Update the valid frame range in the ROI model
+            if hasattr(image_like, 'valid_frame_range'):
+                valid_frames = np.where(~dead_frames)[0]
+                image_like.valid_frame_range = (valid_frames[0], valid_frames[-1])
+            
+            self._log(f"Removed {n_dead} dead frames. New volume shape: {volume.shape}", level=2)
         else:
             self._log("No dead frames found", level=2)
             volume = image_like.volume
             
         self._log("Dead frame removal complete", level=1, timing=time.time() - start_time)
-        return volume 
+        return volume
 
     def segment_roi(self, image_model: ImageModel) -> Optional[ROI]:
         """Extract and segment region of interest from volume.
@@ -496,13 +499,6 @@ class ImageProcessor:
         
         # Remove small objects in 3D
         bw_vol = remove_small_objects(bw_vol, min_size=self.config.min_object_size)
-        
-        # Apply morphological operations
-        if close_radius > 0:
-            # Then do closing to connect nearby vessel segments
-            self._log(f"Performing 3D closing with radius {close_radius}", level=2)
-            bw_vol = binary_closing(bw_vol, ball(close_radius))
-            
 
         self._log("Binarization complete", level=1, timing=time.time() - start_time)
         return bw_vol
