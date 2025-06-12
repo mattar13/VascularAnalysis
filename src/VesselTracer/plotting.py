@@ -259,20 +259,27 @@ def plot_paths(controller, figsize=(15, 7), region_colorcode: bool = False, proj
     """
     # Create figure with two subplots
     fig = plt.figure(figsize=figsize)
-    gs = plt.GridSpec(1, 2, width_ratios=[1, 1])
+    gs = plt.GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[1, 1])
     
     # Create 2D and 3D axes
-    ax_2d = fig.add_subplot(gs[0, 0])
-    ax_3d = fig.add_subplot(gs[0, 1], projection='3d')
+    ax_2d_xy = fig.add_subplot(gs[0, 0])
+    ax_2d_xz = fig.add_subplot(gs[0, 1])
+    ax_2d_zy = fig.add_subplot(gs[1, 0])
+    ax_3d = fig.add_subplot(gs[1, 1], projection='3d')
     
     # Plot paths on 2D axis
-    plot_paths_on_axis(controller, ax_2d, projection=projection, region_colorcode=region_colorcode)
-    
+    plot_paths_on_axis(controller, ax_2d_xy, projection='xy', region_colorcode=region_colorcode)
+    plot_paths_on_axis(controller, ax_2d_xz, projection='xz', region_colorcode=region_colorcode)
+    plot_paths_on_axis(controller, ax_2d_zy, projection='zy', region_colorcode=region_colorcode)
+
+
     # Plot paths on 3D axis
     plot_paths_on_axis(controller, ax_3d, projection='xyz', region_colorcode=region_colorcode)
     
     # Set titles
-    ax_2d.set_title(f'{projection.upper()} Projection')
+    ax_2d_xy.set_title(f'XY Projection')
+    ax_2d_xz.set_title(f'XZ Projection')
+    ax_2d_zy.set_title(f'ZY Projection')
     ax_3d.set_title('3D View')
     
     # Add legend if using region colorcoding
@@ -289,7 +296,7 @@ def plot_paths(controller, figsize=(15, 7), region_colorcode: bool = False, proj
                   ncol=4, title='Regions')
     
     plt.tight_layout()
-    return fig, {'2d': ax_2d, '3d': ax_3d}
+    return fig, {'2d_xy': ax_2d_xy, '2d_xz': ax_2d_xz, '2d_zy': ax_2d_zy, '3d': ax_3d}
 
 def plot_projections_w_paths(controller, figsize=(10, 10), mode: str = 'binary', depth_coded: bool = False, region_colorcode: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections with vessel paths.
