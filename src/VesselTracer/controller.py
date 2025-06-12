@@ -127,7 +127,7 @@ class VesselAnalysisController:
 
     def run_analysis(self,
                     remove_dead_frames: bool = True,
-                    dead_frame_threshold: float = 1.5,
+                    dead_frame_threshold: float = 3.0,
                     skip_smoothing: bool = False,
                     skip_binarization: bool = False,
                     skip_regions: bool = False, 
@@ -161,27 +161,30 @@ class VesselAnalysisController:
             else:
                 self._log("Using full volume as ROI", level=1)
                 self.roi_model = self.image_model
-            #Normalize? 
-            self.roi_model.volume = self.processor.normalize_image(self.roi_model)
-
+            
+            self._log("3. Detrending...", level=1)
+            self.roi_model.volume = self.processor.detrend_volume(self.roi_model)
+            
             # 2. Remove dead frames if requested
             if remove_dead_frames:
                 self._log("2. Removing dead frames...", level=1)
                 self.roi_model.volume = self.processor.remove_dead_frames(self.roi_model, dead_frame_threshold)
             
+            #Normalize? 
+            self.roi_model.volume = self.processor.normalize_image(self.roi_model)
+            
+            
             # 3. Background estimation and subtraction using ImageProcessor
-            self._log("3. Background estimation...", level=1)
+            self._log("4. Background estimation...", level=1)
             self.roi_model.background = self.processor.estimate_background(self.roi_model)
             
             # Perform background subtraction in controller
-            self._log("3b. Background subtraction...", level=1)
+            self._log("4b. Background subtraction...", level=1)
             self.roi_model.volume = self.roi_model.volume - self.roi_model.background
             
             self._log(f"Background subtracted volume range: [{self.roi_model.volume.min():.3f}, {self.roi_model.volume.max():.3f}]", level=2)
             
             # 4. Detrend using ImageProcessor
-            self._log("4. Detrending...", level=1)
-            self.roi_model.volume = self.processor.detrend_volume(self.roi_model)
             
             
             # 5. Smooth volume using ImageProcessor
