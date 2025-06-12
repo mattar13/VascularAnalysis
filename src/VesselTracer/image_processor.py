@@ -640,8 +640,7 @@ class ImageProcessor:
         self._log("Region map creation complete", level=1, timing=time.time() - start_time)
         return region_map
         
-    def _get_region_for_z(self, z_coord: float, 
-                         region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]]) -> str:
+    def _get_region_for_z(self, z_coord: float, region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]]) -> str:
         """Determine which region a z-coordinate belongs to.
         
         Args:
