@@ -196,8 +196,8 @@ class VesselAnalysisController:
                 self._log("6. Determining regions...", level=1)
                 
                 # VesselTracer determines and stores regions internally
-                region_bounds = self.tracer.determine_regions(self.roi_model.binary)
-                for region, (peak, sigma, bounds) in region_bounds.items():
+                self.roi_model.region_bounds = self.tracer.determine_regions(self.roi_model.binary)
+                for region, (peak, sigma, bounds) in self.roi_model.region_bounds.items():
                     self._log(f"\n{region}:", level=2)
                     self._log(f"  Peak position: {peak:.1f}", level=2)
                     self._log(f"  Width (sigma): {sigma:.1f}", level=2)
@@ -205,16 +205,16 @@ class VesselAnalysisController:
                 
                 # Create region map volume using VesselTracer
                 self._log("6b. Creating region map volume...", level=1)
-                self.roi_model.region = self.tracer.create_region_map_volume(self.roi_model.binary, region_bounds)
+                self.roi_model.region = self.tracer.create_region_map_volume(self.roi_model.binary, self.roi_model.region_bounds)
             
             # 7. Trace vessel paths using VesselTracer
             if not skip_trace:
                 self._log("7. Tracing vessel paths...", level=1)
 
                 # VesselTracer traces and stores paths internally
-                self.roi_model.paths, self.roi_model.path_stats = self.tracer.trace_paths(
+                self.roi_model.paths, self.roi_model.path_stats, self.roi_model.n_paths = self.tracer.trace_paths(
                     binary_volume=self.roi_model.binary,
-                    region_bounds=None,  # VesselTracer will use its stored region_bounds
+                    region_bounds=self.roi_model.region_bounds,  # VesselTracer will use its stored region_bounds
                     split_paths=False  # Can be made configurable
                 )
             
