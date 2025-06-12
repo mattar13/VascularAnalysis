@@ -359,8 +359,10 @@ def plot_regions(controller, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.
     else:
         data_object = controller.image_model
     
-    # Get mean z-profile and y-projection using the data object's get_projection method
+    # Get mean, min, and max z-profiles using the data object's get_projection method
     mean_zprofile = data_object.get_projection([1, 2], operation='mean')
+    min_zprofile = data_object.get_projection([1, 2], operation='min')
+    max_zprofile = data_object.get_projection([1, 2], operation='max')
     y_proj = data_object.get_projection(1, operation='max')
     
     # Determine regions if not already done
@@ -379,7 +381,9 @@ def plot_regions(controller, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.
     # Plot mean z-profile
     Z = len(mean_zprofile)
     z_positions = np.arange(Z)
-    ax1.plot(mean_zprofile, z_positions, color='black')
+    ax1.plot(mean_zprofile, z_positions, color='black', label='Mean')
+    #ax1.plot(min_zprofile, z_positions, color='gray', linestyle=':', label='Min')
+    #ax1.plot(max_zprofile, z_positions, color='gray', linestyle=':', label='Max')
     
     # Define colors for layers
     layer_colors = ['tab:purple', 'tab:red', 'tab:blue']
@@ -401,6 +405,9 @@ def plot_regions(controller, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.
     
     # Add legend to the first axis
     ax0.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    
+    # Add legend for z-profiles
+    #ax1.legend(loc='upper right')
     
     plt.tight_layout()
     
