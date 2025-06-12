@@ -155,7 +155,6 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     
     return fig, axes
 
-
 def plot_paths_on_axis(controller, ax, 
                        projection='xy', region_colorcode: bool = False, 
                        linedwith = 5, alpha = 0.8, invert_yaxis: bool = False) -> None:
@@ -183,6 +182,8 @@ def plot_paths_on_axis(controller, ax,
     # Use provided paths or all paths
     # paths = paths_to_plot if paths_to_plot is not None else controller.paths
     paths = controller.roi_model.paths
+    #get the region bounds
+    region_bounds = controller.roi_model.region_bounds
 
     # Plot each path
     for path_id, path in paths.items():
@@ -211,12 +212,14 @@ def plot_paths_on_axis(controller, ax,
             else:
                 raise ValueError(f"Invalid projection '{projection}'. Must be one of: ['xy', 'xz', 'zy', 'xyz']")
             
-            if region_colorcode and hasattr(controller, 'region_bounds'):
+            if region_colorcode:
                 # Get the region for each point in the path
-                regions = [controller.get_region_for_z(z) for z in z_coords]
+                regions = [controller.processor._get_region_for_z(z, region_bounds) for z in z_coords]
                 unique_regions = np.unique(regions)
+                
+                print(f"Unique regions: {unique_regions}")
 
-                if len(unique_regions) > 1 or unique_regions[0] == 'unknown':
+                if len(unique_regions) > 1 or unique_regions[0] == 'Outside':
                     # Plot as diving vessel if path crosses multiple regions
                     color = region_colors['diving']
                 else:
