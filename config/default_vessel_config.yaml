@@ -5,6 +5,10 @@ roi:
   min_x: 500     # X center coordinate
   min_y: 500     # Y center coordinate
 
+dead_frames:
+  remove: True
+  threshold: 0.75
+
 # Median filter settings (for background subtraction)
 median_filter:
   size: 45.0
@@ -16,7 +20,7 @@ gaussian_filter:
 
 # Closing settings (for larger vessels)
 closing:
-  close_radius: 2.0  # Closing operation radius in microns
+  close_radius: 5.0  # Closing operation radius in microns
   min_object_size: 64  # Minimum object size to keep (in voxels)
   prune_length: 5  # Length to prune skeleton branches (in voxels)
 
