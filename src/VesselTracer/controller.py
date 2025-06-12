@@ -252,67 +252,70 @@ class VesselAnalysisController:
 
     def save_volume(self, 
                    output_dir: str,
-                   save_original: bool = True,
-                   save_binary: bool = True,
-                   save_region_map: bool = True,
-                   save_separate: bool = False) -> None:
-        """Save volume data as .tif files.
+                   source: str = 'roi',
+                   volume_type: str,
+                   filename: Optional[str] = None) -> None:
+        """Save a specific volume type as a .tif file.
         
         Args:
-            output_dir: Directory to save the .tif files
-            save_original: Whether to save the original ROI volume
-            save_binary: Whether to save the binary volume
-            save_region_map: Whether to save the region map volume
-            save_separate: If True, saves each volume type as a separate file.
-                          If False, saves all volumes in a single multi-channel file.
+            output_dir: Directory to save the .tif file
+            source: Source of the volume to save. Options:
+                - 'roi': ROI volume from ROI model
+                - 'image': Original volume from image model
+            volume_type: Type of volume to save. Options:
+                - 'volume': Original volume from image model
+                - 'roi': ROI volume from ROI model
+                - 'binary': Binary volume from ROI model
+                - 'background': Background subtracted volume from ROI model
+                - 'region': Region map from ROI model
+            filename: Optional custom filename. If not provided, will use volume_type_volume.tif
         """
         # Create output directory if it doesn't exist
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
-        # Check if we have the volumes we want to save (delegate to components)
-        if save_binary and not self.processor.has_binary():
-            raise ValueError("Binary volume not available. Run analysis pipeline first.")
-        if save_region_map and not self.tracer.has_region_map():
-            raise ValueError("Region map volume not available. Run analysis pipeline with regions enabled first.")
-            
-        # Prepare volumes for saving (get from components)
-        volumes = []
-        volume_names = []
-        
-        if save_original:
-            # Get volume from processor
-            original_data = self.processor.get_current_volume()
-            volumes.append(original_data)
-            volume_names.append('original')
-        if save_binary:
-            binary_data = self.processor.get_binary_volume()
-            volumes.append(binary_data.astype(np.uint8))  # Convert boolean to uint8
-            volume_names.append('binary')
-        if save_region_map:
-            region_data = self.tracer.get_region_map_volume()
-            volumes.append(region_data)  # Already uint8
-            volume_names.append('region_map')
-            
-        if not volumes:
-            print("No volumes selected for saving!")
-            return
-            
-        if save_separate:
-            # Save each volume as a separate file
-            for vol, name in zip(volumes, volume_names):
-                output_file = output_path / f"{name}_volume.tif"
-                print(f"Saving {name} volume to {output_file}")
-                tifffile.imwrite(str(output_file), vol)
+        if source == 'roi':
+            model = self.roi_model
+        elif source == 'image':
+            model = self.image_model
         else:
-            # Save all volumes in a single multi-channel file
-            # Stack volumes along a new channel dimension
-            stacked_volumes = np.stack(volumes, axis=0)
-            output_file = output_path / "all_volumes.tif"
-            print(f"Saving all volumes to {output_file}")
-            tifffile.imwrite(str(output_file), stacked_volumes)
+            raise ValueError(f"Invalid source: {source}. Must be one of: roi, image")
+
+        # Get volume data based on type
+        if volume_type == 'volume':
+            if model is None or model.volume is None:
+                raise ValueError("Model or volume not available")
+            volume_data = model.volume
             
-        print("Volume saving complete!")
+        elif volume_type == 'binary':
+            if model is None or model.binary is None:
+                raise ValueError("Model or binary volume not available")
+            volume_data = model.binary.astype(np.uint8)
+            
+        elif volume_type == 'background':
+            if model is None or model.background is None:
+                raise ValueError("Model or background volume not available")
+            volume_data = model.background
+            
+        elif volume_type == 'region':
+            if model is None or model.region is None:
+                raise ValueError("Model or region map not available")
+            volume_data = model.region
+            
+        else:
+            raise ValueError(f"Invalid volume type: {volume_type}. Must be one of: volume, roi, binary, background, region")
+            
+        # Set filename
+        if filename is None:
+            filename = f"{volume_type}_volume.tif"
+        elif not filename.endswith('.tif'):
+            filename = f"{filename}.tif"
+            
+        # Save volume
+        output_file = output_path / filename
+        print(f"Saving {volume_type} volume to {output_file}")
+        tifffile.imwrite(str(output_file), volume_data)
+        print(f"Volume saving complete! Shape: {volume_data.shape}, dtype: {volume_data.dtype}")
 
     def generate_analysis_dataframes(self) -> Dict[str, pd.DataFrame]:
         """Generate pandas DataFrames containing analysis results.
