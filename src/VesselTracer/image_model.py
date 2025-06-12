@@ -17,6 +17,7 @@ class ImageModel:
     paths: Optional[Dict[str, Any]] = None
     filepath: Optional[Union[str, Path]] = None
     pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)
+    region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None
     
     # Image properties
     pixel_size_x: float = 1.0
