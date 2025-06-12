@@ -141,63 +141,111 @@ class ImageProcessor:
         self._log(f"Normalized range: [{image_like.volume.min():.3f}, {image_like.volume.max():.3f}]", level=2)
         return image_like.volume
 
-    def remove_dead_frames(self, image_like: Union[ImageModel, ROI]) -> np.ndarray:
+    def remove_dead_frames(self, image_like: Union[ImageModel, ROI], method: str = 'peaks') -> np.ndarray:
         """Remove frames with unusually low intensity (dead frames).
+        
+        Supports two methods for dead frame removal:
+        1. 'threshold': Uses statistical thresholding based on mean and std
+        2. 'peaks': Uses peak finding to determine valid frame range
         
         Args:
             image_like: ImageModel or ROI object containing the volume to process
+            method: Method to use for dead frame removal ('threshold' or 'peaks')
             
         Returns:
             np.ndarray: Volume with dead frames removed
         """
         start_time = time.time()
-        self._log("Removing dead frames...", level=1)
+        self._log(f"Removing dead frames using {method} method...", level=1)
         
         if image_like.volume is None:
             raise ValueError("No volume data available for dead frame removal")
             
         # Calculate mean intensity for each z-slice
         mean_intensities = np.mean(image_like.volume, axis=(1,2))
-        threshold = self.config.dead_frame_threshold
-        print(f"Max intensity: {np.max(mean_intensities)}")
-        print(f"Min intensity: {np.min(mean_intensities)}")
-        print(f"Mean intensity: {np.mean(mean_intensities)}")
-        print(f"Std intensity: {np.std(mean_intensities)}")
-
-        # Calculate statistics
-        mean_intensity = np.mean(mean_intensities)
-        std_intensity = np.std(mean_intensities)
-        #Use the triangle method to find the threshold
-        #threshold = threshold_triangle(mean_intensities)
-        print(f"Threshold: {threshold}")
-
-        self.config.dead_frame_threshold = threshold #Going to have to go back and save correctly
-        threshold_value = mean_intensity - (threshold * std_intensity)
-        print(f"Value to threshold: {threshold_value}")
         
-        # Find dead frames
-        dead_frames = mean_intensities < threshold_value
-        n_dead = np.sum(dead_frames)
-        
-        if n_dead > 0:
-            self._log(f"Found {n_dead} dead frames", level=2)
-            self._log(f"Mean intensity: {mean_intensity:.2f}", level=2)
-            self._log(f"Std intensity: {std_intensity:.2f}", level=2)
-            self._log(f"Threshold: {threshold_value:.2f}", level=2)
+        if method == 'threshold':
+            # Use statistical thresholding method
+            threshold = self.config.dead_frame_threshold
+            self._log(f"Using threshold method with threshold: {threshold}", level=2)
             
-            # Remove dead frames by keeping only valid frames
-            volume = image_like.volume[~dead_frames]
+            # Calculate statistics
+            mean_intensity = np.mean(mean_intensities)
+            std_intensity = np.std(mean_intensities)
+            
+            # Calculate threshold value
+            threshold_value = mean_intensity - (threshold * std_intensity)
+            
+            # Find dead frames
+            dead_frames = mean_intensities < threshold_value
+            n_dead = np.sum(dead_frames)
+            
+            if n_dead > 0:
+                self._log(f"Found {n_dead} dead frames", level=2)
+                self._log(f"Mean intensity: {mean_intensity:.2f}", level=2)
+                self._log(f"Std intensity: {std_intensity:.2f}", level=2)
+                self._log(f"Threshold value: {threshold_value:.2f}", level=2)
+                
+                # Remove dead frames by keeping only valid frames
+                volume = image_like.volume[~dead_frames]
+                
+                # Update the valid frame range in the ROI model
+                if hasattr(image_like, 'valid_frame_range'):
+                    valid_frames = np.where(~dead_frames)[0]
+                    image_like.valid_frame_range = (valid_frames[0], valid_frames[-1])
+                
+                self._log(f"Removed {n_dead} dead frames. New volume shape: {volume.shape}", level=2)
+            else:
+                self._log("No dead frames found", level=2)
+                volume = image_like.volume
+                
+        elif method == 'peaks':
+            # Use peak finding method
+            self._log("Using peak finding method", level=2)
+            
+            # Find peaks in mean intensity profile
+            peaks, _ = find_peaks(mean_intensities, distance=self.config.region_peak_distance)
+            
+            if len(peaks) < 2:
+                raise ValueError("Not enough peaks found to determine valid frame range")
+                
+            # Get first and last peaks
+            first_peak = peaks[0]
+            last_peak = peaks[-1]
+            
+            # Calculate peak widths
+            widths_all, _, _, _ = peak_widths(
+                mean_intensities, peaks, rel_height=self.config.region_height_ratio)
+            
+            # Get widths for first and last peaks
+            first_width = widths_all[0]
+            last_width = widths_all[-1]
+            
+            # Calculate valid frame range
+            start_frame = max(0, int(first_peak - first_width))
+            end_frame = min(len(mean_intensities) - 1, int(last_peak + last_width))
+            
+            self._log(f"First peak at frame {first_peak} with width {first_width:.1f}", level=2)
+            self._log(f"Last peak at frame {last_peak} with width {last_width:.1f}", level=2)
+            self._log(f"Valid frame range: {start_frame} to {end_frame}", level=2)
+            
+            # Create mask for valid frames
+            valid_frames = np.zeros(len(mean_intensities), dtype=bool)
+            valid_frames[start_frame:end_frame + 1] = True
+            
+            # Remove frames outside valid range
+            volume = image_like.volume[valid_frames]
             
             # Update the valid frame range in the ROI model
             if hasattr(image_like, 'valid_frame_range'):
-                valid_frames = np.where(~dead_frames)[0]
-                image_like.valid_frame_range = (valid_frames[0], valid_frames[-1])
+                image_like.valid_frame_range = (start_frame, end_frame)
             
-            self._log(f"Removed {n_dead} dead frames. New volume shape: {volume.shape}", level=2)
+            n_removed = len(mean_intensities) - len(volume)
+            self._log(f"Removed {n_removed} frames outside valid range. New volume shape: {volume.shape}", level=2)
+            
         else:
-            self._log("No dead frames found", level=2)
-            volume = image_like.volume
-            
+            raise ValueError(f"Unknown method: {method}. Must be either 'threshold' or 'peaks'")
+        
         self._log("Dead frame removal complete", level=1, timing=time.time() - start_time)
         return volume
 
