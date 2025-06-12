@@ -155,8 +155,9 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     
     return fig, axes
 
+
 def plot_paths_on_axis(controller, ax, 
-                       projection='xy', region_colorcode: bool = False, is_3d: bool = False, 
+                       projection='xy', region_colorcode: bool = False, 
                        linedwith = 5, alpha = 0.8, invert_yaxis: bool = False) -> None:
     """Plot vessel paths on a given axis.
     
@@ -189,6 +190,7 @@ def plot_paths_on_axis(controller, ax,
         if len(path_coords) > 0:
             # Extract x, y, z coordinates
             z_coords = path_coords[:, 0]  # z is first coordinate
+            # print(z_coords)
             y_coords = path_coords[:, 1]  # y is second coordinate
             x_coords = path_coords[:, 2]  # x is third coordinate
             
@@ -222,13 +224,13 @@ def plot_paths_on_axis(controller, ax,
                     region = unique_regions[0]
                     color = region_colors[region]
                 
-                if is_3d:
+                if projection == 'xyz':
                     ax.plot(plot_x, plot_y, plot_z, color=color, linewidth=linedwith, alpha=alpha)
                 else:
                     ax.plot(plot_x, plot_y, color=color, linewidth=linedwith, alpha=alpha)
             else:
                 # Plot entire path in red
-                if is_3d:
+                if projection == 'xyz':
                     ax.plot(plot_x, plot_y, plot_z, 'r-', linewidth=linedwith, alpha=alpha)
                 else:
                     ax.plot(plot_x, plot_y, 'r-', linewidth=linedwith, alpha=alpha)
@@ -348,9 +350,9 @@ def plot_regions(controller, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.
     y_proj = data_object.get_projection(1, operation='max')
     
     # Determine regions if not already done
-    if controller.tracer.region_bounds is None:
+    if data_object.region_bounds is None:
         print("Determining regions has not been run yet")
-        controller.tracer.determine_regions()
+        data_object.region_bounds = controller.tracer.determine_regions(data_object.binary)
     
     # Create figure with two subplots
     fig, (ax0, ax1) = plt.subplots(1, 2, figsize=figsize, 
@@ -369,7 +371,7 @@ def plot_regions(controller, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.
     layer_colors = ['tab:purple', 'tab:red', 'tab:blue']
     
     # Plot regions
-    for i, (region, (peak, sigma, bounds)) in enumerate(controller.tracer.region_bounds.items()):
+    for i, (region, (peak, sigma, bounds)) in enumerate(controller.roi_model.region_bounds.items()):
         # Add horizontal lines at peaks
         ax0.axhline(peak, color='red', linestyle='--', alpha=0.5)
         ax1.axhline(peak, color='red', linestyle='--', alpha=0.5)
