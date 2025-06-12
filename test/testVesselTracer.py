@@ -47,7 +47,7 @@ def main(input_path, config_path, output_dir=None):
         fig2a, ax2a = plot_projections(controller, mode='background', source = 'roi')
         fig2a.savefig(output_dir / "background_projections.png")
 
-        fig2c, ax2c = plot_projections(controller, mode='binary', source = 'roi')
+        fig2c, ax2c = plot_projections(controller, mode='binary', source = 'roi', depth_coded=True)
         fig2c.savefig(output_dir / "binary_projections.png")
 
         print("Plotting regions...")
@@ -63,6 +63,38 @@ def main(input_path, config_path, output_dir=None):
         fig5.savefig(output_dir / "projections_w_paths.png")
         
         plt.close('all')
+
+        # Test saving volumes
+        print("\nTesting volume saving...")
+        volumes_dir = output_dir / "volumes"
+        volumes_dir.mkdir(exist_ok=True)
+        
+        # Save each type of volume
+        controller.save_volume(volumes_dir, 'volume', source='roi')
+        controller.save_volume(volumes_dir, 'binary', source='roi')
+        controller.save_volume(volumes_dir, 'binary', source='roi', depth_coded=True)
+        controller.save_volume(volumes_dir, 'background', source='roi')
+        controller.save_volume(volumes_dir, 'region', source='roi')
+
+        # Save paths data
+        print("\nSaving paths data...")
+        paths_dir = output_dir / "paths"
+        paths_dir.mkdir(exist_ok=True)
+        
+        # Get pixel sizes from image model
+        pixel_sizes = {
+            'x': controller.image_model.pixel_size_x,
+            'y': controller.image_model.pixel_size_y,
+            'z': controller.image_model.pixel_size_z
+        }
+        
+        # Save detailed paths data
+        paths_df = controller.create_paths_dataframe(pixel_sizes)
+        paths_df.to_excel(paths_dir / "detailed_paths.xlsx", index=False)
+        
+        # Save path summary data
+        path_summary_df = controller.create_path_summary_dataframe(pixel_sizes)
+        path_summary_df.to_excel(paths_dir / "path_summary.xlsx", index=False)
 
         print(f"\nAnalysis complete! Results saved to: {output_dir}")
         
