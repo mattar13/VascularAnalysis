@@ -157,38 +157,41 @@ class VesselAnalysisController:
             # 1. Extract ROI using ImageProcessor
             self._log("1. Extracting ROI...", level=1)
             if self.config.find_roi:
-                self.roi_model = self.processor.segment_roi(
-                    image_model=self.image_model,
-                    remove_dead_frames=remove_dead_frames, 
-                    dead_frame_threshold=dead_frame_threshold
-                )
+                self.roi_model = self.processor.segment_roi(image_model=self.image_model)
             else:
                 self._log("Using full volume as ROI", level=1)
                 self.roi_model = self.image_model
             #Normalize? 
             self.roi_model.volume = self.processor.normalize_image(self.roi_model)
 
-            # 2. Background estimation and subtraction using ImageProcessor
-            self._log("2. Background estimation...", level=1)
+            # 2. Remove dead frames if requested
+            if remove_dead_frames:
+                self._log("2. Removing dead frames...", level=1)
+                self.roi_model.volume = self.processor.remove_dead_frames(self.roi_model, dead_frame_threshold)
+            
+            # 3. Background estimation and subtraction using ImageProcessor
+            self._log("3. Background estimation...", level=1)
             self.roi_model.background = self.processor.estimate_background(self.roi_model)
             
             # Perform background subtraction in controller
-            self._log("2b. Background subtraction...", level=1)
+            self._log("3b. Background subtraction...", level=1)
             self.roi_model.volume = self.roi_model.volume - self.roi_model.background
             
             self._log(f"Background subtracted volume range: [{self.roi_model.volume.min():.3f}, {self.roi_model.volume.max():.3f}]", level=2)
-            # 3. Detrend using ImageProcessor
-            self._log("3. Detrending...", level=1)
+            
+            # 4. Detrend using ImageProcessor
+            self._log("4. Detrending...", level=1)
             self.roi_model.volume = self.processor.detrend_volume(self.roi_model)
             
-            # 4. Smooth volume using ImageProcessor
+            
+            # 5. Smooth volume using ImageProcessor
             if not skip_smoothing:
-                self._log("4. Smoothing volume...", level=1)
+                self._log("5. Smoothing volume...", level=1)
                 self.roi_model.volume = self.processor.smooth_volume(self.roi_model)
             
-            # 5. Binarize vessels using ImageProcessor
+            # 6. Binarize vessels using ImageProcessor
             if not skip_binarization:
-                self._log("5. Binarizing vessels...", level=1)
+                self._log("6. Binarizing vessels...", level=1)
                 self.roi_model.binary = self.processor.binarize_volume(self.roi_model)
             
             # 7. Trace vessel paths using VesselTracer
@@ -200,9 +203,9 @@ class VesselAnalysisController:
                     binary_volume=self.roi_model.binary,
                 )
 
-            # 6. Determine regions using VesselTracer
+            # 8. Determine regions using VesselTracer
             if not skip_regions:
-                self._log("6. Determining regions...", level=1)
+                self._log("8. Determining regions...", level=1)
                 
                 # Use ImageProcessor to determine regions
                 self.roi_model.region_bounds = self.processor.determine_regions(self.roi_model)
@@ -215,7 +218,7 @@ class VesselAnalysisController:
                     self._log(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}", level=2)
                 
                 # Create region map volume using ImageProcessor
-                self._log("6b. Creating region map...", level=1)
+                self._log("8b. Creating region map...", level=1)
                 self.roi_model.region = self.processor.create_region_map(self.roi_model, self.roi_model.region_bounds)
             
             self._log("Analysis complete", level=1, timing=time.time() - start_time)
