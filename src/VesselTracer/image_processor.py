@@ -139,17 +139,68 @@ class ImageProcessor:
         self._log(f"Normalized range: [{image_like.volume.min():.3f}, {image_like.volume.max():.3f}]", level=2)
         return image_like.volume
 
-    def segment_roi(self, 
-                   image_model: ImageModel,
-                   remove_dead_frames: bool = True, 
-                   dead_frame_threshold: float = 1.5) -> Optional[ROI]:
+    def remove_dead_frames(self, image_like: Union[ImageModel, ROI], threshold: float = 1.5) -> np.ndarray:
+        """Remove frames with unusually low intensity (dead frames).
+        
+        Args:
+            image_like: ImageModel or ROI object containing the volume to process
+            threshold: Multiplier of standard deviation to use as threshold
+            
+        Returns:
+            np.ndarray: Volume with dead frames removed
+        """
+        start_time = time.time()
+        self._log("Removing dead frames...", level=1)
+        
+        if image_like.volume is None:
+            raise ValueError("No volume data available for dead frame removal")
+            
+        # Calculate mean intensity for each z-slice
+        mean_intensities = np.mean(image_like.volume, axis=(1,2))
+        
+        # Calculate statistics
+        mean_intensity = np.mean(mean_intensities)
+        std_intensity = np.std(mean_intensities)
+        threshold_value = mean_intensity - (threshold * std_intensity)
+        
+        # Find dead frames
+        dead_frames = mean_intensities < threshold_value
+        n_dead = np.sum(dead_frames)
+        
+        if n_dead > 0:
+            self._log(f"Found {n_dead} dead frames", level=2)
+            self._log(f"Mean intensity: {mean_intensity:.2f}", level=2)
+            self._log(f"Std intensity: {std_intensity:.2f}", level=2)
+            self._log(f"Threshold: {threshold_value:.2f}", level=2)
+            
+            # Replace dead frames with mean of neighboring frames
+            volume = image_like.volume.copy()
+            for z in np.where(dead_frames)[0]:
+                # Get valid neighboring frames
+                neighbors = []
+                if z > 0 and not dead_frames[z-1]:
+                    neighbors.append(volume[z-1])
+                if z < len(dead_frames)-1 and not dead_frames[z+1]:
+                    neighbors.append(volume[z+1])
+                
+                if neighbors:
+                    # Replace with mean of neighbors
+                    volume[z] = np.mean(neighbors, axis=0)
+                else:
+                    # If no valid neighbors, use global mean
+                    volume[z] = np.mean(volume[~dead_frames], axis=0)
+        else:
+            self._log("No dead frames found", level=2)
+            volume = image_like.volume
+            
+        self._log("Dead frame removal complete", level=1, timing=time.time() - start_time)
+        return volume 
+
+    def segment_roi(self, image_model: ImageModel) -> Optional[ROI]:
         """Extract and segment region of interest from volume.
         
         Args:
             image_model: Source ImageModel containing the full volume
-            remove_dead_frames: Whether to remove low-intensity frames at start/end
-            dead_frame_threshold: Number of standard deviations above minimum
-                                intensity to use as threshold for dead frames
         
         Returns:
             ROI: ROI object containing the extracted region, or None if no valid frames found
@@ -187,31 +238,6 @@ class ImageProcessor:
                             self.config.min_x:self.config.min_x+roi_x]
             
             valid_frame_range = (0, roi.shape[0]-1)
-            
-            if remove_dead_frames:
-                self._log("Removing dead frames...", level=2)
-                # Calculate mean intensity profile along z
-                z_profile = np.mean(roi, axis=(1,2))
-                
-                # Find frames above threshold
-                threshold = z_profile.min() + dead_frame_threshold * z_profile.std()
-                valid_frames = np.where(z_profile > threshold)[0]
-                
-                if len(valid_frames) > 0:
-                    frame_start = valid_frames[0]
-                    frame_end = valid_frames[-1]
-                    
-                    self._log(f"Original z-range: 0-{len(z_profile)-1}", level=2)
-                    self._log(f"Valid frame range: {frame_start}-{frame_end}", level=2)
-                    self._log(f"Removed {frame_start} frames from start", level=2)
-                    self._log(f"Removed {len(z_profile)-frame_end-1} frames from end", level=2)
-                    
-                    # Update ROI to exclude dead frames
-                    roi = roi[frame_start:frame_end+1]
-                    valid_frame_range = (frame_start, frame_end)
-                else:
-                    self._log("Warning: No frames found above threshold! Skipping this ROI.", level=1)
-                    return None
                     
             # Create ROI model
             roi_model = ROI(
@@ -653,4 +679,4 @@ class ImageProcessor:
         for region_name, (peak, sigma, (lower, upper)) in region_bounds.items():
             if lower <= z_coord <= upper:
                 return region_name
-        return 'Outside' 
+        return 'Outside'
