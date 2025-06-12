@@ -141,7 +141,7 @@ class ImageProcessor:
         self._log(f"Normalized range: [{image_like.volume.min():.3f}, {image_like.volume.max():.3f}]", level=2)
         return image_like.volume
 
-    def remove_dead_frames(self, image_like: Union[ImageModel, ROI], method: str = 'peaks') -> np.ndarray:
+    def remove_dead_frames(self, image_like: Union[ImageModel, ROI]) -> np.ndarray:
         """Remove frames with unusually low intensity (dead frames).
         
         Supports two methods for dead frame removal:
@@ -151,10 +151,13 @@ class ImageProcessor:
         Args:
             image_like: ImageModel or ROI object containing the volume to process
             method: Method to use for dead frame removal ('threshold' or 'peaks')
-            
+            frames_from_edge: Number of frames to remove from the edges of the volume
         Returns:
             np.ndarray: Volume with dead frames removed
         """
+        method = self.config.dead_frame_method
+        frames_from_edge = self.config.dead_frame_frames_from_edge
+        
         start_time = time.time()
         self._log(f"Removing dead frames using {method} method...", level=1)
         
@@ -218,8 +221,12 @@ class ImageProcessor:
                 mean_intensities, peaks, rel_height=self.config.region_height_ratio)
             
             # Get widths for first and last peaks
-            first_width = widths_all[0]
-            last_width = widths_all[-1]
+            if frames_from_edge < 0:
+                first_width = widths_all[0]
+                last_width = widths_all[-1]
+            else:
+                first_width = frames_from_edge
+                last_width = frames_from_edge
             
             # Calculate valid frame range
             start_frame = max(0, int(first_peak - first_width))
