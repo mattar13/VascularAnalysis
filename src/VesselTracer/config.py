@@ -74,7 +74,6 @@ class VesselTracerConfig:
         
         # Pre-processing settings
         self.micron_gauss_sigma = config['preprocessing']['gauss_sigma']
-        self.micron_background_sigma = config['preprocessing']['background_sigma']
         self.micron_median_filter_size = config['preprocessing']['median_filter_size']
         self.micron_close_radius = config['preprocessing']['close_radius']
         self.min_object_size = config['preprocessing']['min_object_size']
@@ -83,10 +82,10 @@ class VesselTracerConfig:
         
         # Region settings
         self.regions = config.get('regions', ['superficial', 'intermediate', 'deep'])
-        self.region_peak_distance = config.get('region_peak_distance', 2)
-        self.region_height_ratio = config.get('region_height_ratio', 0.80)
-        self.region_n_stds = config.get('region_n_stds', 2)
-        
+        self.region_peak_distance = config['region']['peak_distance']
+        self.region_height_ratio = config['region']['height_ratio']
+        self.region_n_stds = config['region']['n_stds']
+        print(self.region_peak_distance, self.region_height_ratio, self.region_n_stds)
         # Verbose settings
         self.verbose = config.get('verbose', 2)
 
