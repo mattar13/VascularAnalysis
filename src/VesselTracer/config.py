@@ -79,7 +79,7 @@ class VesselTracerConfig:
         self.min_object_size = config['preprocessing']['min_object_size']
         self.prune_length = config['preprocessing']['prune_length']
         self.binarization_method = config['preprocessing']['binarization_method']
-        
+        self.max_workers = config['preprocessing']['max_workers']
         # Region settings
         self.regions = config.get('regions', ['superficial', 'intermediate', 'deep'])
         self.region_peak_distance = config['region']['peak_distance']
@@ -124,7 +124,8 @@ class VesselTracerConfig:
             'region_peak_distance': self.region_peak_distance,
             'region_height_ratio': self.region_height_ratio,
             'region_n_stds': self.region_n_stds,
-            'verbose': self.verbose
+            'verbose': self.verbose,
+            'max_workers': self.max_workers
         }
         
         # Add pixel sizes if provided
