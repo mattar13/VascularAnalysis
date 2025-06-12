@@ -126,7 +126,7 @@ class VesselAnalysisController:
         self.config.save_metadata(output_path, pixel_sizes, input_type, processing_status, format)
 
     def run_analysis(self,
-                    remove_dead_frames: bool = False,
+                    remove_dead_frames: bool = True,
                     dead_frame_threshold: float = 1.5,
                     skip_smoothing: bool = False,
                     skip_binarization: bool = False,
@@ -179,7 +179,7 @@ class VesselAnalysisController:
             self._log(f"Background subtracted volume range: [{self.roi_model.volume.min():.3f}, {self.roi_model.volume.max():.3f}]", level=2)
             # 3. Detrend using ImageProcessor
             self._log("3. Detrending...", level=1)
-            #self.roi_model.volume = self.processor.detrend_volume(self.roi_model)
+            self.roi_model.volume = self.processor.detrend_volume(self.roi_model)
             
             # 4. Smooth volume using ImageProcessor
             if not skip_smoothing:
