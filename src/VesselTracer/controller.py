@@ -250,18 +250,18 @@ class VesselAnalysisController:
                 
         print("ROI updated. Next pipeline step will use new parameters.")
 
-    def save_volume(self, 
-                   output_dir: str,
-                   volume_type: str,
-                   source: Optional[str] = 'roi',
-                   filename: Optional[str] = None) -> None:
+    def save_volume(self,
+                     output_dir: str,
+                     volume_type: str,
+                     source: Optional[str] = 'roi',
+                     filename: Optional[str] = None,
+                     depth_coded: bool = False) -> None:
         """Save a specific volume type as a .tif file.
         
         Args:
-            output_dir: Directory to save the .tif file
+            output_dir: Directory to save the volume to
             volume_type: Type of volume to save. Options:
-                - 'volume': Original volume from image model
-                - 'roi': ROI volume from ROI model
+                - 'volume': Original volume from the model
                 - 'binary': Binary volume from ROI model
                 - 'background': Background subtracted volume from ROI model
                 - 'region': Region map from ROI model
@@ -269,6 +269,8 @@ class VesselAnalysisController:
                 - 'roi': ROI volume from ROI model
                 - 'image': Original volume from image model
             filename: Optional custom filename. If not provided, will use volume_type_volume.tif
+            depth_coded: If True, creates depth-coded volume where intensity represents z-position
+                        (only works with binary volume type)
         """
         # Create output directory if it doesn't exist
         output_path = Path(output_dir)
@@ -305,9 +307,26 @@ class VesselAnalysisController:
         else:
             raise ValueError(f"Invalid volume type: {volume_type}. Must be one of: volume, roi, binary, background, region")
             
+        # Handle depth coding if requested
+        if depth_coded:
+            if volume_type != 'binary':
+                raise ValueError("Depth coding is only available for binary volumes")
+            
+            # Create depth-coded volume
+            Z, Y, X = volume_data.shape
+            depth_vol = np.zeros_like(volume_data, dtype=float)
+            for z in range(Z):
+                depth_vol[z] = volume_data[z] * z
+                
+            # Normalize depth values to [0,1]
+            depth_vol = depth_vol / (Z-1) if depth_vol.max() > 0 else depth_vol
+            volume_data = depth_vol
+            
         # Set filename
         if filename is None:
             filename = f"{volume_type}_volume.tif"
+            if depth_coded:
+                filename = f"{volume_type}_depth_coded.tif"
         elif not filename.endswith('.tif'):
             filename = f"{filename}.tif"
             
@@ -397,6 +416,114 @@ class VesselAnalysisController:
             if not analysis_dfs['path_summary'].empty:
                 analysis_dfs['path_summary'].to_excel(writer, sheet_name='Vessel Paths Summary', index=False)
 
+    def create_paths_dataframe(self, pixel_sizes: Optional[Dict[str, float]] = None) -> pd.DataFrame:
+        """Create a pandas DataFrame from the traced paths.
+        
+        Args:
+            pixel_sizes: Optional dictionary of pixel sizes in microns for coordinate conversion
+            
+        Returns:
+            DataFrame with detailed path information
+        """
+        if self.roi_model is None or self.roi_model.paths is None:
+            return pd.DataFrame()
+            
+        vessel_paths_data = []
+        
+        for path_id, path_info in self.roi_model.paths.items():
+            coords = path_info['coordinates']
+            length = path_info['length']
+            
+            # Get region for each point
+            regions = [self.processor._get_region_for_z(z, self.roi_model.region_bounds) 
+                      for z in coords[:, 0]]
+            
+            # Convert coordinates if pixel sizes provided
+            if pixel_sizes:
+                z_scale = pixel_sizes.get('z', 1.0)
+                y_scale = pixel_sizes.get('y', 1.0)
+                x_scale = pixel_sizes.get('x', 1.0)
+            else:
+                z_scale = y_scale = x_scale = 1.0
+            
+            # Convert path coordinates to DataFrame rows
+            for i, coord in enumerate(coords):
+                vessel_paths_data.append({
+                    'Path_ID': path_id,
+                    'Point_Index': i,
+                    'Primary_Region': regions[i],
+                    'Z': coord[0],  # Z coordinate in pixels
+                    'Y': coord[1],  # Y coordinate in pixels  
+                    'X': coord[2],  # X coordinate in pixels
+                    'Z_microns': coord[0] * z_scale,  # Z in microns
+                    'Y_microns': coord[1] * y_scale,  # Y in microns
+                    'X_microns': coord[2] * x_scale,  # X in microns,
+                    'Path_Length': length
+                })
+                
+        return pd.DataFrame(vessel_paths_data)
+    
+    def create_path_summary_dataframe(self, pixel_sizes: Optional[Dict[str, float]] = None) -> pd.DataFrame:
+        """Create a summary DataFrame with one row per path.
+        
+        Args:
+            pixel_sizes: Optional dictionary of pixel sizes in microns for coordinate conversion
+            
+        Returns:
+            DataFrame with path summary information
+        """
+        if self.roi_model is None or self.roi_model.paths is None:
+            return pd.DataFrame()
+            
+        path_summary_data = []
+        
+        # Convert pixel sizes if provided
+        if pixel_sizes:
+            z_scale = pixel_sizes.get('z', 1.0)
+            y_scale = pixel_sizes.get('y', 1.0)
+            x_scale = pixel_sizes.get('x', 1.0)
+        else:
+            z_scale = y_scale = x_scale = 1.0
+        
+        for path_id, path_info in self.roi_model.paths.items():
+            coords = path_info['coordinates']
+            length = path_info['length']
+            
+            # Get regions for start and end points
+            start_region = self.processor._get_region_for_z(coords[0, 0], self.roi_model.region_bounds)
+            end_region = self.processor._get_region_for_z(coords[-1, 0], self.roi_model.region_bounds)
+            
+            # Get all regions traversed
+            regions = [self.processor._get_region_for_z(z, self.roi_model.region_bounds) 
+                      for z in coords[:, 0]]
+            unique_regions = list(set(regions))
+            
+            # Calculate path length in microns if pixel sizes provided
+            if pixel_sizes:
+                length_microns = length * np.mean([x_scale, y_scale, z_scale])  # Approximate length conversion
+            else:
+                length_microns = length
+            
+            # Create summary entry for this path
+            summary_entry = {
+                'Path_ID': path_id,
+                'Primary_Region': start_region,  # Use start region as primary
+                'Path_Length_pixels': length,
+                'Path_Length_microns': length_microns,
+                'Start_Z': coords[0][0],
+                'End_Z': coords[-1][0],
+                'Start_Z_microns': coords[0][0] * z_scale,
+                'End_Z_microns': coords[-1][0] * z_scale,
+                'Num_Points': len(coords),
+                'Start_Region': start_region,
+                'End_Region': end_region,
+                'Regions_Traversed': unique_regions
+            }
+            
+            path_summary_data.append(summary_entry)
+            
+        return pd.DataFrame(path_summary_data)
+    
     def multiscan(self, 
                   skip_smoothing: bool = False, 
                   skip_binarization: bool = False, 
