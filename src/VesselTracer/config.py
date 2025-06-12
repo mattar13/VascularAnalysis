@@ -17,6 +17,10 @@ class VesselTracerConfig:
     min_x: int = 500
     min_y: int = 500
     
+    # Dead frames settings
+    remove_dead_frames: bool = True
+    dead_frame_threshold: float = 0.75
+    
     # Median filter settings
     median_filter_size: float = 45.0
     max_workers: Optional[int] = None
@@ -73,6 +77,10 @@ class VesselTracerConfig:
         self.min_x = config['roi']['min_x']
         self.min_y = config['roi']['min_y']
         
+        # Dead frames settings
+        self.remove_dead_frames = config['dead_frames']['remove']
+        self.dead_frame_threshold = config['dead_frames']['threshold']
+        
         # Median filter settings
         self.median_filter_size = config['median_filter']['size']
         self.max_workers = config['median_filter']['max_workers']
@@ -118,6 +126,10 @@ class VesselTracerConfig:
                 'micron_roi': self.micron_roi,
                 'min_x': self.min_x,
                 'min_y': self.min_y
+            },
+            'dead_frames': {
+                'remove': self.remove_dead_frames,
+                'threshold': self.dead_frame_threshold
             },
             'median_filter': {
                 'size': self.median_filter_size,
@@ -314,6 +326,10 @@ class VesselTracerConfig:
             print(f"    micron_roi     -> {self.micron_roi:8} [Size of region of interest in microns]")
             print(f"    min_x          -> {self.min_x:8} [X coordinate of ROI minimum]")
             print(f"    min_y          -> {self.min_y:8} [Y coordinate of ROI minimum]")
+        
+        print("\nDead Frames Settings:")
+        print(f"    remove_dead_frames -> {self.remove_dead_frames}")
+        print(f"    dead_frame_threshold -> {self.dead_frame_threshold:.2f}")
         
         print("\nScale Bar Settings:")
         print(f"    scalebar_length  -> {self.scalebar_length:8} [Length of scale bar in plot units]")
