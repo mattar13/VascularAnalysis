@@ -552,20 +552,17 @@ class ImageProcessor:
         Returns:
             np.ndarray: Binary volume after closing
         """
+        close_radius = self.config.close_radius
         start_time = time.time()
         self._log("Applying morphological closing...", level=1)
         
         if image_like.binary is None:
             raise ValueError("No binary volume available for morphological closing")
             
-        if radius is None:
-            pixel_conversions = self._get_pixel_conversions(image_like)
-            radius = pixel_conversions.get('close_radius', 1)
-        
-        self._log(f"Closing radius: {radius} pixels", level=2)
+        self._log(f"Closing radius: {close_radius} pixels", level=2)
         
         # Apply closing
-        closed_volume = binary_closing(image_like.binary, ball(radius))
+        closed_volume = binary_closing(image_like.binary, ball(close_radius))
         
         # Update the binary volume
         image_like.binary = closed_volume
