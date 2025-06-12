@@ -5,17 +5,24 @@ roi:
   min_x: 500     # X center coordinate
   min_y: 500     # Y center coordinate
 
+# Median filter settings (for background subtraction)
+median_filter:
+  size: 45.0
+  max_workers: null
 
-# Pre-processing parameters
-preprocessing:
-  # All size parameters are now in microns
-  gauss_sigma: 1.5  # Regular smoothing sigma in microns (for noise reduction)
-  median_filter_size: 45.0  # Median filter size in microns
+# Gaussian filter settings (for noise reduction)
+gaussian_filter: 
+  sigma: 1.5
+
+# Closing settings (for larger vessels)
+closing:
   close_radius: 2.0  # Closing operation radius in microns
   min_object_size: 64  # Minimum object size to keep (in voxels)
   prune_length: 5  # Length to prune skeleton branches (in voxels)
-  binarization_method: 'triangle'  # Method for binarization ('triangle' or 'otsu')
-  max_workers: null  # Number of worker threads for parallel processing. null = use default (CPU cores)
+
+# Binarization settings
+binarization:
+  method: 'triangle'  # Method for binarization ('triangle' or 'otsu')
 
 # Region detection parameters
 region:
