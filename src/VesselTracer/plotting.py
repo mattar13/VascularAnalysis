@@ -217,15 +217,19 @@ def plot_paths_on_axis(controller, ax,
                 regions = [controller.processor._get_region_for_z(z, region_bounds) for z in z_coords]
                 unique_regions = np.unique(regions)
                 
-                print(f"Unique regions: {unique_regions}")
+                #print(f"Unique regions: {unique_regions}")
 
                 if len(unique_regions) > 1 or unique_regions[0] == 'Outside':
                     # Plot as diving vessel if path crosses multiple regions
                     color = region_colors['diving']
+                    alpha = 0.25
+                    linedwith = 2
                 else:
                     # Plot in the color of its single region
                     region = unique_regions[0]
                     color = region_colors[region]
+                    alpha = 0.8
+                    linewidth = linedwith
                 
                 if projection == 'xyz':
                     ax.plot(plot_x, plot_y, plot_z, color=color, linewidth=linedwith, alpha=alpha)
@@ -400,5 +404,3 @@ def plot_regions(controller, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.
     }
     
     return fig, axes
-
-
