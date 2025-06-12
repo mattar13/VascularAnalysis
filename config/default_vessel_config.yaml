@@ -7,7 +7,7 @@ roi:
 
 dead_frames:
   remove: True
-  threshold: 0.75
+  threshold: 0.8
 
 # Median filter settings (for background subtraction)
 median_filter:
