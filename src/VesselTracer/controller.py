@@ -204,8 +204,8 @@ class VesselAnalysisController:
             if not skip_regions:
                 self._log("6. Determining regions...", level=1)
                 
-                # VesselTracer determines and stores regions internally
-                self.roi_model.region_bounds = self.tracer.determine_regions(self.roi_model.binary)
+                # Use ImageProcessor to determine regions
+                self.roi_model.region_bounds = self.processor.determine_regions(self.roi_model)
                 
                 print(self.roi_model.region_bounds)
                 for region, (peak, sigma, bounds) in self.roi_model.region_bounds.items():
@@ -214,9 +214,9 @@ class VesselAnalysisController:
                     self._log(f"  Width (sigma): {sigma:.1f}", level=2)
                     self._log(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}", level=2)
                 
-                # Create region map volume using VesselTracer
-                self._log("6b. Creating region map volume...", level=1)
-                self.roi_model.region = self.tracer.create_region_map_volume(self.roi_model.binary, self.roi_model.region_bounds)
+                # Create region map volume using ImageProcessor
+                self._log("6b. Creating region map...", level=1)
+                self.roi_model.region = self.processor.create_region_map(self.roi_model, self.roi_model.region_bounds)
             
             self._log("Analysis complete", level=1, timing=time.time() - start_time)
             
