@@ -148,23 +148,24 @@ class VesselAnalysisController:
             # 1. Extract ROI using ImageProcessor
             self._log("1. Extracting ROI...", level=1)
             if self.config.find_roi:
-                self.roi_model = self.processor.segment_roi(image_model=self.image_model)
+                self.roi_model = self.processor.segment_roi(self.image_model)
             else:
                 self._log("Using full volume as ROI", level=1)
                 self.roi_model = self.image_model
             
+            #Normalize? 
+            self.roi_model.volume = self.processor.normalize_image(self.roi_model)
+
             self._log("3. Detrending...", level=1)
             self.roi_model.volume = self.processor.detrend_volume(self.roi_model)
             
+            print(f"\tVolume shape: {self.roi_model.volume.shape}")
             # 2. Remove dead frames if requested
-            if remove_dead_frames:
+            if self.config.remove_dead_frames:
                 self._log("2. Removing dead frames...", level=1)
-                self.roi_model.volume = self.processor.remove_dead_frames(self.roi_model, dead_frame_threshold)
-            
-            #Normalize? 
-            self.roi_model.volume = self.processor.normalize_image(self.roi_model)
-            
-            
+                self.roi_model.volume = self.processor.remove_dead_frames(self.roi_model)
+            print(f"\tVolume shape: {self.roi_model.volume.shape}")
+
             # 3. Background estimation and subtraction using ImageProcessor
             self._log("4. Background estimation...", level=1)
             self.roi_model.background = self.processor.estimate_background(self.roi_model)
@@ -185,6 +186,9 @@ class VesselAnalysisController:
                 self._log("6. Binarizing vessels...", level=1)
                 self.roi_model.binary = self.processor.binarize_volume(self.roi_model)
             
+            #Lets try a 3D closing (some larger vessels are not closing properly)
+            self.roi_model.binary = self.processor.morphological_closing(self.roi_model)
+
             # 7. Trace vessel paths using VesselTracer
             if not skip_trace:
                 self._log("7. Tracing vessel paths...", level=1)
@@ -194,8 +198,6 @@ class VesselAnalysisController:
                     binary_volume=self.roi_model.binary,
                 )
 
-            #Lets try a 3D closing (some larger vessels are not closing properly)
-            self.roi_model.binary = self.processor.morphological_closing(self.roi_model)
 
             # 8. Determine regions using VesselTracer
             if not skip_regions:
