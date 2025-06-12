@@ -21,43 +21,30 @@ class VesselAnalysisController:
     the component objects and delegates all operations.
     """
     
-    def __init__(self, input_data: Union[str, Path, np.ndarray],
-                 config_path: Optional[Union[str, Path]] = None,
-                 pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)):
-        """Initialize VesselAnalysisController with input data and configuration.
+    def __init__(self, 
+                 input_path: Union[str, Path],
+                 config_path: Union[str, Path],
+                 verbose: int = 2,
+                 use_gpu: bool = False):
+        """Initialize the controller.
         
         Args:
-            input_data: Either a path to a CZI/TIF file (as string or Path object) or a 3D numpy array
-            config_path: Optional path to YAML config file. If None, uses default config
-            pixel_sizes: Tuple of (z,y,x) pixel sizes in microns. Defaults to (1.0, 1.0, 1.0)
+            input_path: Path to input image file
+            config_path: Path to configuration file
+            verbose: Verbosity level for logging (0-3)
+            use_gpu: Whether to use GPU acceleration if available
         """
-        # Store input parameters for reference
-        self.input_data = input_data
-        self.pixel_sizes = pixel_sizes
+        self.verbose = verbose
+        self.use_gpu = use_gpu
         
-        # Initialize configuration first
-        self.config = VesselTracerConfig(config_path=config_path)
+        # Load configuration
+        self.config = VesselTracerConfig(config_path)
         
-        # Create ImageModel based on input type
-        if isinstance(input_data, np.ndarray):
-            # Handle numpy array input
-            self.image_model = ImageModel(
-                input_data=input_data,
-                pixel_sizes=pixel_sizes
-            )
-        else:
-            # Handle filepath input (string or Path)
-            self.image_model = ImageModel(
-                filepath=input_data,
-                pixel_sizes=pixel_sizes
-            )
-        self.roi_model = None #Load this if we decide to use segmentation
-
-        # Initialize processing components with config only
+        # Initialize components
         self.processor = ImageProcessor(
-            config=self.config,  # Pass config directly
-            verbose=True,  # Can be made configurable
-            use_gpu=False  # Will be activated separately if needed
+            config=self.config,
+            verbose=verbose,
+            use_gpu=use_gpu
         )
         
         self.tracer = VesselTracer(
