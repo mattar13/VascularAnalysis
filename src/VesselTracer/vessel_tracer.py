@@ -158,40 +158,20 @@ class VesselTracer:
         
         return region_map
     
-    def trace_paths(self, binary_volume: np.ndarray, 
-                   region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None,
-                   split_paths: bool = False) -> Tuple[Dict[str, Any], Any]:
-        """Create vessel skeleton and trace paths from binary volume.
+    def trace_paths(self, 
+                    binary_volume: np.ndarray, region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None, split_paths: bool = False) -> Tuple[Dict[str, Any], Dict[str, Any], int]:
+        """Create vessel skeleton and trace paths.
         
         Args:
-            binary_volume: 3D binary numpy array (boolean or 0/1)
-            region_bounds: Optional dictionary of region bounds for path region assignment
             split_paths: Whether to split paths at region boundaries
             
         Returns:
             Tuple containing:
-            - paths: Dictionary of branch paths with coordinates and metadata
-            - stats: DataFrame with branch statistics from skan
+            - paths: Dictionary of branch paths with coordinates
+            - stats: DataFrame with branch statistics
         """
-        start_time = time.time()
+        start_time = time.time()    
         self._log("Tracing vessel paths...", level=1)
-        
-        if binary_volume is None:
-            raise ValueError("Binary volume cannot be None")
-            
-        if not isinstance(binary_volume, np.ndarray):
-            raise ValueError("Binary volume must be a numpy array")
-            
-        if binary_volume.ndim != 3:
-            raise ValueError("Binary volume must be 3D")
-            
-        # Ensure binary volume is boolean
-        if binary_volume.dtype != bool:
-            binary_volume = binary_volume.astype(bool)
-            
-        # Use provided region_bounds or stored ones
-        if region_bounds is None:
-            region_bounds = self.region_bounds
             
         self._log(f"Skeletonizing binary volume of shape {binary_volume.shape}", level=2)
         ske = sk_skeletonize(binary_volume)
@@ -202,7 +182,7 @@ class VesselTracer:
         self._log("Created skeleton object", level=2)
         
         # Get detailed statistics using skan's summarize function
-        self.stats = summarize(skeleton_obj, separator="-")
+        stats = summarize(skeleton_obj, separator="-")
         n_paths = skeleton_obj.n_paths
         
         # Convert skeleton object to dictionary with region information
@@ -218,36 +198,41 @@ class VesselTracer:
                 
                 if len(path_coords) == 0:
                     continue
-                
-                if split_paths and region_bounds:
-                    # Split path into segments based on region boundaries
-                    path_segments = self._split_path_at_region_boundaries(path_coords, region_bounds)
                     
-                    for segment_region, segment_coords in path_segments:
-                        # Create separate entry for each segment
-                        paths_dict[path_id] = {
-                            'original_path_id': i,
-                            'coordinates': segment_coords,
-                            'length': len(segment_coords),
-                            'region': segment_region,
-                            'z_range': (float(segment_coords[:, 0].min()), float(segment_coords[:, 0].max())) if len(segment_coords) > 0 else (0, 0),
-                            'is_segment': True,
-                            'parent_path_id': i
-                        }
-                        path_id += 1
+                if split_paths:
+                    # Split path at region boundaries and create separate entries
+                    path_segments = self.split_path_at_region_boundaries(path_coords)
+                    
+                    for region, segment_coords in path_segments:
+                        if len(segment_coords) > 1:  # Only store segments with more than one point
+                            paths_dict[path_id] = {
+                                'original_path_id': i,
+                                'region': region,
+                                'coordinates': segment_coords,
+                                'length': len(segment_coords)
+                            }
+                            path_id += 1
                 else:
-                    # Store entire path with region information
-                    primary_region = self._get_primary_region_for_path(path_coords, region_bounds) if region_bounds else 'Unknown'
-                    region_fractions = self._calculate_region_fractions(path_coords, region_bounds) if region_bounds else {}
+                    # Determine the primary region for this path using z-coordinates
+                    z_coords = path_coords[:, 0]  # Extract z-coordinates
+                    regions_in_path = [self.get_region_for_z(z) for z in z_coords]
+                    
+                    # Find the most common region in this path
+                    from collections import Counter
+                    region_counts = Counter(regions_in_path)
+                    primary_region = region_counts.most_common(1)[0][0]
+                    
+                    # Calculate what fraction of path is in each region
+                    region_fractions = {region: count/len(regions_in_path) 
+                                      for region, count in region_counts.items()}
                     
                     paths_dict[path_id] = {
                         'original_path_id': i,
-                        'coordinates': path_coords,
-                        'length': len(path_coords),
                         'region': primary_region,
                         'region_fractions': region_fractions,
-                        'z_range': (float(path_coords[:, 0].min()), float(path_coords[:, 0].max())) if len(path_coords) > 0 else (0, 0),
-                        'is_segment': False
+                        'coordinates': path_coords,
+                        'length': len(path_coords),
+                        'z_range': (float(z_coords.min()), float(z_coords.max()))
                     }
                     path_id += 1
                     
@@ -256,13 +241,17 @@ class VesselTracer:
                 continue
         
         # Store the converted paths and update counts
-        self.paths = paths_dict
-        self.n_paths = len(paths_dict)
+        paths = paths_dict
+        n_paths = len(paths_dict)
         
         self._log(f"Converted skeleton to dictionary with {self.n_paths} vessel paths", level=2)
-        self._log("Path tracing complete", level=1, timing=time.time() - start_time)
-        
-        return self.paths, self.stats
+        if split_paths:
+            self._log("Paths split at region boundaries", level=2)
+        else:
+            self._log("Paths labeled with primary regions", level=2)
+            
+        self._log("Path tracing complete", level=1, timing=time.time() - start_time)    
+        return paths, stats, n_paths
     
     def _get_primary_region_for_path(self, path_coords: np.ndarray, 
                                    region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]]) -> str:
