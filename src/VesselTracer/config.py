@@ -18,8 +18,10 @@ class VesselTracerConfig:
     min_y: int = 500
     
     # Dead frames settings
+    dead_frame_method: str = 'threshold'
     remove_dead_frames: bool = True
     dead_frame_threshold: float = 0.75
+    dead_frame_frames_from_edge: int = 15
     
     # Median filter settings
     median_filter_size: float = 45.0
@@ -79,8 +81,10 @@ class VesselTracerConfig:
         
         # Dead frames settings
         self.remove_dead_frames = config['dead_frames']['remove']
+        self.dead_frame_method = config['dead_frames']['method']
         self.dead_frame_threshold = config['dead_frames']['threshold']
-        
+        self.dead_frame_frames_from_edge = config['dead_frames']['frames_from_edge']
+
         # Median filter settings
         self.median_filter_size = config['median_filter']['size']
         self.max_workers = config['median_filter']['max_workers']
@@ -129,7 +133,8 @@ class VesselTracerConfig:
             },
             'dead_frames': {
                 'remove': self.remove_dead_frames,
-                'threshold': self.dead_frame_threshold
+                'threshold': self.dead_frame_threshold,
+                'frames_from_edge': self.dead_frame_frames_from_edge
             },
             'median_filter': {
                 'size': self.median_filter_size,
@@ -329,7 +334,9 @@ class VesselTracerConfig:
         
         print("\nDead Frames Settings:")
         print(f"    remove_dead_frames -> {self.remove_dead_frames}")
+        print(f"    dead_frame_method -> {self.dead_frame_method}")
         print(f"    dead_frame_threshold -> {self.dead_frame_threshold:.2f}")
+        print(f"    dead_frame_frames_from_edge -> {self.dead_frame_frames_from_edge}")
         
         print("\nScale Bar Settings:")
         print(f"    scalebar_length  -> {self.scalebar_length:8} [Length of scale bar in plot units]")
