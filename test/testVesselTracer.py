@@ -32,6 +32,8 @@ def main(input_path, config_path, output_dir=None):
             skip_regions=False,
             skip_trace=False,
         )
+
+        controller.roi_model.paths
         # print(controller.roi_model.background.shape)
         # Generate plots using the controller's projection methods
         print("Plotting projections...")
