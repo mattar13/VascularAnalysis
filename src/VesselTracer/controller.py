@@ -40,6 +40,10 @@ class VesselAnalysisController:
         # Load configuration
         self.config = VesselTracerConfig(config_path)
         
+        # Initialize image model
+        self.image_model = ImageModel(filepath=input_path)
+        self.roi_model = None  # Will be initialized during analysis
+        
         # Initialize components
         self.processor = ImageProcessor(
             config=self.config,
@@ -171,9 +175,6 @@ class VesselAnalysisController:
             
             self._log(f"Background subtracted volume range: [{self.roi_model.volume.min():.3f}, {self.roi_model.volume.max():.3f}]", level=2)
             
-            # 4. Detrend using ImageProcessor
-            
-            
             # 5. Smooth volume using ImageProcessor
             if not skip_smoothing:
                 self._log("5. Smoothing volume...", level=1)
@@ -192,6 +193,9 @@ class VesselAnalysisController:
                 self.roi_model.paths, self.roi_model.path_stats, self.roi_model.n_paths = self.tracer.trace_paths(
                     binary_volume=self.roi_model.binary,
                 )
+
+            #Lets try a 3D closing (some larger vessels are not closing properly)
+            self.roi_model.binary = self.processor.morphological_closing(self.roi_model)
 
             # 8. Determine regions using VesselTracer
             if not skip_regions:
