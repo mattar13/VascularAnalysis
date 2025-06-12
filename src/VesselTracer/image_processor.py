@@ -6,6 +6,8 @@ from skimage.morphology import remove_small_objects, binary_closing, binary_open
 from skimage.filters import threshold_otsu, threshold_triangle
 import concurrent.futures
 from scipy.signal import find_peaks, peak_widths
+from tqdm import tqdm
+import multiprocessing
 
 # Try to import CuPy for GPU acceleration
 try:
@@ -316,22 +318,37 @@ class ImageProcessor:
             # Create empty array for background
             background_image = np.zeros_like(image_like.volume)
             
-            # Process slices in parallel
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+            # Get max_workers from config
+            max_workers = self.config.max_workers
+            
+            # Get number of available CPU cores
+            cpu_count = multiprocessing.cpu_count()
+            self._log(f"Available CPU cores: {cpu_count}", level=2)
+            
+            # Process slices in parallel with progress bar
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Log number of workers being used
+                if max_workers is None:
+                    self._log(f"Using default number of worker threads ({cpu_count})", level=2)
+                else:
+                    self._log(f"Using {max_workers} worker threads (out of {cpu_count} available cores)", level=2)
+                
                 # Submit all z-slices for processing
                 future_to_slice = {
                     executor.submit(self._process_z_slice, image_like.volume[z], median_filter_size): z 
                     for z in range(n_slices)
                 }
                 
-                # Process results as they complete
-                for future in concurrent.futures.as_completed(future_to_slice):
-                    z = future_to_slice[future]
-                    try:
-                        background_slice = future.result()
-                        background_image[z] = background_slice
-                    except Exception as e:
-                        self._log(f"Error processing slice {z}: {str(e)}", level=1)
+                # Process results as they complete with progress bar
+                with tqdm(total=n_slices, desc="Processing slices", unit="slice") as pbar:
+                    for future in concurrent.futures.as_completed(future_to_slice):
+                        z = future_to_slice[future]
+                        try:
+                            background_slice = future.result()
+                            background_image[z] = background_slice
+                            pbar.update(1)
+                        except Exception as e:
+                            self._log(f"Error processing slice {z}: {str(e)}", level=1)
         
         self._log("Background estimation complete", level=1, timing=time.time() - start_time)
         self._log(f"Background volume range: [{background_image.min():.3f}, {background_image.max():.3f}]", level=2)
