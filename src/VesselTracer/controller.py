@@ -252,22 +252,22 @@ class VesselAnalysisController:
 
     def save_volume(self, 
                    output_dir: str,
-                   source: str = 'roi',
                    volume_type: str,
+                   source: Optional[str] = 'roi',
                    filename: Optional[str] = None) -> None:
         """Save a specific volume type as a .tif file.
         
         Args:
             output_dir: Directory to save the .tif file
-            source: Source of the volume to save. Options:
-                - 'roi': ROI volume from ROI model
-                - 'image': Original volume from image model
             volume_type: Type of volume to save. Options:
                 - 'volume': Original volume from image model
                 - 'roi': ROI volume from ROI model
                 - 'binary': Binary volume from ROI model
                 - 'background': Background subtracted volume from ROI model
                 - 'region': Region map from ROI model
+            source: Source of the volume to save. Options:
+                - 'roi': ROI volume from ROI model
+                - 'image': Original volume from image model
             filename: Optional custom filename. If not provided, will use volume_type_volume.tif
         """
         # Create output directory if it doesn't exist
