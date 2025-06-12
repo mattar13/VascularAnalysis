@@ -17,25 +17,31 @@ class VesselTracerConfig:
     min_x: int = 500
     min_y: int = 500
     
-    # Scale bar settings
-    scalebar_length: float = 25.0
-    scalebar_x: float = 15.0
-    scalebar_y: float = 200.0
+    # Median filter settings
+    median_filter_size: float = 45.0
+    max_workers: Optional[int] = None
     
-    # Pre-processing parameters (in microns)
-    micron_gauss_sigma: float = 2.0
-    micron_background_sigma: float = 3.0
-    micron_median_filter_size: float = 5.0
-    micron_close_radius: float = 2.0
+    # Gaussian filter settings
+    gaussian_sigma: float = 1.5
+    
+    # Closing settings
+    close_radius: float = 2.0
     min_object_size: int = 64
     prune_length: int = 5
+    
+    # Binarization settings
     binarization_method: str = 'triangle'
     
     # Region settings
     regions: List[str] = None
     region_peak_distance: int = 2
     region_height_ratio: float = 0.80
-    region_n_stds: int = 2
+    region_n_stds: float = 3.0
+    
+    # Scale bar settings
+    scalebar_length: float = 25.0
+    scalebar_x: float = 15.0
+    scalebar_y: float = 200.0
     
     # Verbose settings
     verbose: int = 2
@@ -67,25 +73,32 @@ class VesselTracerConfig:
         self.min_x = config['roi']['min_x']
         self.min_y = config['roi']['min_y']
         
-        # Scale bar settings
-        self.scalebar_length = config['scalebar']['length']
-        self.scalebar_x = config['scalebar']['x']
-        self.scalebar_y = config['scalebar']['y']
+        # Median filter settings
+        self.median_filter_size = config['median_filter']['size']
+        self.max_workers = config['median_filter']['max_workers']
         
-        # Pre-processing settings
-        self.micron_gauss_sigma = config['preprocessing']['gauss_sigma']
-        self.micron_median_filter_size = config['preprocessing']['median_filter_size']
-        self.micron_close_radius = config['preprocessing']['close_radius']
-        self.min_object_size = config['preprocessing']['min_object_size']
-        self.prune_length = config['preprocessing']['prune_length']
-        self.binarization_method = config['preprocessing']['binarization_method']
-        self.max_workers = config['preprocessing']['max_workers']
+        # Gaussian filter settings
+        self.gaussian_sigma = config['gaussian_filter']['sigma']
+        
+        # Closing settings
+        self.close_radius = config['closing']['close_radius']
+        self.min_object_size = config['closing']['min_object_size']
+        self.prune_length = config['closing']['prune_length']
+        
+        # Binarization settings
+        self.binarization_method = config['binarization']['method']
+        
         # Region settings
         self.regions = config.get('regions', ['superficial', 'intermediate', 'deep'])
         self.region_peak_distance = config['region']['peak_distance']
         self.region_height_ratio = config['region']['height_ratio']
         self.region_n_stds = config['region']['n_stds']
-        print(self.region_peak_distance, self.region_height_ratio, self.region_n_stds)
+        
+        # Scale bar settings
+        self.scalebar_length = config['scalebar']['length']
+        self.scalebar_x = config['scalebar']['x']
+        self.scalebar_y = config['scalebar']['y']
+        
         # Verbose settings
         self.verbose = config.get('verbose', 2)
 
@@ -106,26 +119,33 @@ class VesselTracerConfig:
                 'min_x': self.min_x,
                 'min_y': self.min_y
             },
+            'median_filter': {
+                'size': self.median_filter_size,
+                'max_workers': self.max_workers
+            },
+            'gaussian_filter': {
+                'sigma': self.gaussian_sigma
+            },
+            'closing': {
+                'close_radius': self.close_radius,
+                'min_object_size': self.min_object_size,
+                'prune_length': self.prune_length
+            },
+            'binarization': {
+                'method': self.binarization_method
+            },
+            'region': {
+                'peak_distance': self.region_peak_distance,
+                'height_ratio': self.region_height_ratio,
+                'n_stds': self.region_n_stds
+            },
+            'regions': self.regions,
             'scalebar': {
                 'length': self.scalebar_length,
                 'x': self.scalebar_x,
                 'y': self.scalebar_y
             },
-            'preprocessing': {
-                'gauss_sigma': self.micron_gauss_sigma,
-                'background_sigma': self.micron_background_sigma,
-                'median_filter_size': self.micron_median_filter_size,
-                'close_radius': self.micron_close_radius,
-                'min_object_size': self.min_object_size,
-                'prune_length': self.prune_length,
-                'binarization_method': self.binarization_method
-            },
-            'regions': self.regions,
-            'region_peak_distance': self.region_peak_distance,
-            'region_height_ratio': self.region_height_ratio,
-            'region_n_stds': self.region_n_stds,
-            'verbose': self.verbose,
-            'max_workers': self.max_workers
+            'verbose': self.verbose
         }
         
         # Add pixel sizes if provided
@@ -157,38 +177,25 @@ class VesselTracerConfig:
         pixel_size_z, pixel_size_y, pixel_size_x = pixel_sizes
         
         # Convert Gaussian sigma for each dimension (for regular smoothing)
-        gauss_sigma_x = self.micron_gauss_sigma / pixel_size_x
-        gauss_sigma_y = self.micron_gauss_sigma / pixel_size_y
-        gauss_sigma_z = self.micron_gauss_sigma / pixel_size_z
+        gauss_sigma_x = self.gaussian_sigma / pixel_size_x
+        gauss_sigma_y = self.gaussian_sigma / pixel_size_y
+        gauss_sigma_z = self.gaussian_sigma / pixel_size_z
         gauss_sigma = (gauss_sigma_z, gauss_sigma_y, gauss_sigma_x)
-        
-        # Convert background smoothing sigma for each dimension
-        background_sigma_x = self.micron_background_sigma / pixel_size_x
-        background_sigma_y = self.micron_background_sigma / pixel_size_y
-        background_sigma_z = self.micron_background_sigma / pixel_size_z
-        background_sigma = (background_sigma_z, background_sigma_y, background_sigma_x)
         
         # Convert median filter size (use average of x and y pixel sizes)
         avg_xy_pixel_size = (pixel_size_x + pixel_size_y) / 2
-        median_filter_size = int(round(self.micron_median_filter_size / avg_xy_pixel_size))
+        median_filter_size = int(round(self.median_filter_size / avg_xy_pixel_size))
         # Ensure odd size for median filter
         if median_filter_size % 2 == 0:
             median_filter_size += 1
             
-        # Convert closing radius (use average of x and y pixel sizes)
-        close_radius = int(round(self.micron_close_radius / avg_xy_pixel_size))
-        
         return {
             'gauss_sigma_x': gauss_sigma_x,
             'gauss_sigma_y': gauss_sigma_y,
             'gauss_sigma_z': gauss_sigma_z,
             'gauss_sigma': gauss_sigma,
-            'background_sigma_x': background_sigma_x,
-            'background_sigma_y': background_sigma_y,
-            'background_sigma_z': background_sigma_z,
-            'background_sigma': background_sigma,
             'median_filter_size': median_filter_size,
-            'close_radius': close_radius
+            'close_radius': self.close_radius
         }
 
     def generate_metadata_df(self, 
@@ -216,10 +223,9 @@ class VesselTracerConfig:
             ('ROI Size (microns)', self.micron_roi),
             ('ROI Min X', self.min_x),
             ('ROI Min Y', self.min_y),
-            ('Gaussian Sigma (microns)', self.micron_gauss_sigma),
-            ('Background Sigma (microns)', self.micron_background_sigma),
-            ('Median Filter Size (microns)', self.micron_median_filter_size),
-            ('Close Radius (microns)', self.micron_close_radius),
+            ('Gaussian Sigma (microns)', self.gaussian_sigma),
+            ('Median Filter Size (microns)', self.median_filter_size),
+            ('Close Radius (microns)', self.close_radius),
             ('Min Object Size', self.min_object_size),
             ('Prune Length', self.prune_length),
             ('Binarization Method', self.binarization_method),
@@ -317,11 +323,11 @@ class VesselTracerConfig:
         print("\nPre-processing Parameters:")
         if pixel_sizes:
             pixel_conversions = self.convert_to_pixels(pixel_sizes)
-            print(f"    gauss_sigma      -> {self.micron_gauss_sigma:.1f} µm -> {pixel_conversions['gauss_sigma_x']:.1f}, {pixel_conversions['gauss_sigma_y']:.1f}, {pixel_conversions['gauss_sigma_z']:.1f} pixels")
+            print(f"    gauss_sigma      -> {self.gaussian_sigma:.1f} µm -> {pixel_conversions['gauss_sigma_x']:.1f}, {pixel_conversions['gauss_sigma_y']:.1f}, {pixel_conversions['gauss_sigma_z']:.1f} pixels")
         else:
-            print(f"    gauss_sigma      -> {self.micron_gauss_sigma:.1f} µm")
+            print(f"    gauss_sigma      -> {self.gaussian_sigma:.1f} µm")
         print(f"    min_object_size  -> {self.min_object_size:8} [Minimum object size to keep]")
-        print(f"    close_radius     -> {self.micron_close_radius:.1f} µm")
+        print(f"    close_radius     -> {self.close_radius:.1f} µm")
         print(f"    prune_length     -> {self.prune_length:8} [Length to prune skeleton branches]")
         
         print("\nRegion Settings:")
