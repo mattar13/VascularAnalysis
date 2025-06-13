@@ -89,11 +89,11 @@ def main(input_path, config_path, output_dir=None):
         }
         
         # Save detailed paths data
-        paths_df = controller.create_paths_dataframe(pixel_sizes)
+        paths_df = controller.create_paths_dataframe(pixel_sizes, source='roi')
         paths_df.to_excel(paths_dir / "detailed_paths.xlsx", index=False)
         
         # Save path summary data
-        path_summary_df = controller.create_path_summary_dataframe(pixel_sizes)
+        path_summary_df = controller.create_path_summary_dataframe(pixel_sizes, source='roi')
         path_summary_df.to_excel(paths_dir / "path_summary.xlsx", index=False)
 
         print(f"\nAnalysis complete! Results saved to: {output_dir}")
