@@ -1,14 +1,14 @@
 # Region of Interest (ROI) settings
 roi:
   find_roi: True
-  micron_roi: 500.0  # ROI size in microns
+  micron_roi: 1500.0  # ROI size in microns
   min_x: 1000     # X center coordinate
   min_y: 1000     # Y center coordinate
 
 dead_frames:
   method: 'threshold'
   remove: True
-  threshold: 0.8
+  threshold: 0.5
   frames_from_edge: 15
 
 # Median filter settings (for background subtraction)
@@ -34,7 +34,7 @@ binarization:
 region:
   peak_distance: 2  # Minimum distance between peaks in z-profile
   height_ratio: 0.80  # Relative height ratio for peak width calculation
-  n_stds: 3.0 # Number of standard deviations for region boundaries
+  n_stds: 1.0 # Number of standard deviations for region boundaries
 
 regions:
  - superficial
