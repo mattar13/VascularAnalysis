@@ -35,7 +35,7 @@ region:
   peak_distance: 10  # Minimum distance between peaks in z-profile
   height_ratio: 0.80  # Relative height ratio for peak width calculation
   n_stds: 1.0 # Number of standard deviations for region boundaries
-  subroi_segmenting_size: 25
+  subroi_segmenting_size: 100
 
 regions:
  - superficial
