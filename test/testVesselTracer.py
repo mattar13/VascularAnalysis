@@ -6,6 +6,8 @@ from VesselTracer import VesselAnalysisController
 from VesselTracer.plotting import plot_projections, plot_regions, plot_paths, plot_projections_w_paths
 import numpy as np
 import pandas as pd
+from skimage import measure
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 def main(input_path, config_path, output_dir=None):
     # Setup input file 
@@ -45,28 +47,30 @@ def main(input_path, config_path, output_dir=None):
         
         # Plot spline surfaces
         if hasattr(controller.roi_model, 'spline_surfaces'):
-            # Create coordinate grids for surface plotting
-            y_coords = np.linspace(0, controller.roi_model.volume.shape[1], 50)
-            x_coords = np.linspace(0, controller.roi_model.volume.shape[2], 50)
-            Y_grid, X_grid = np.meshgrid(y_coords, x_coords, indexing='ij')
+            # Regular grid for evaluation
             
             # Plot each surface
             colors = ['red', 'blue', 'green']
             for i, rbf in enumerate(controller.roi_model.spline_surfaces):
-                # Evaluate surface
-                Z_grid = rbf(np.column_stack((Y_grid.ravel(), X_grid.ravel()))).reshape(Y_grid.shape)
-                
-                # Plot surface
-                surf = ax.plot_surface(X_grid, Y_grid, Z_grid, 
-                                     color=colors[i], 
-                                     alpha=0.3,
-                                     antialiased=True)
+                # Create points for evaluation
+                grid_n = 100
+                gx, gy = np.meshgrid(
+                    np.linspace(0, controller.roi_model.volume.shape[2], grid_n),
+                    np.linspace(0, controller.roi_model.volume.shape[1], grid_n),
+                    indexing="ij"
+                )
+                gz = rbf(np.column_stack([gx.ravel(), gy.ravel()])).reshape(gx.shape)
+                ax.plot_surface(gz, gx, gy, rstride=4, cstride=4, alpha=0.6)  # fitted surface          
+               
         
         # Set labels and title
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
-        ax.set_title('Peak Points and Spline Surfaces')
+        ax.set_title('Peak Points and 3D Spline Surfaces')
+        
+        # Set equal aspect ratio
+        ax.set_box_aspect([1,1,1])
         
         plt.show()
 

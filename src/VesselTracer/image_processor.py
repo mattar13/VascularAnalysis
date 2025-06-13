@@ -752,6 +752,38 @@ class ImageProcessor:
                 return region_name
         return 'Outside'
 
+    def get_xy_points_at_z(self, rbf, z_level: float, grid_size: int = 100) -> np.ndarray:
+        """Find x,y points where the spline surface intersects a given z-level.
+        
+        Args:
+            rbf: RBF interpolator for the surface
+            z_level: Z-level to find points at
+            grid_size: Size of the grid to sample points from
+            
+        Returns:
+            np.ndarray: Array of (x,y) points where the surface intersects the z-level
+        """
+        # Create a grid of x,y points
+        x_coords = np.linspace(0, self.config.micron_roi, grid_size)
+        y_coords = np.linspace(0, self.config.micron_roi, grid_size)
+        X_grid, Y_grid = np.meshgrid(x_coords, y_coords, indexing='ij')
+        
+        # Evaluate the surface at all grid points
+        points = np.column_stack([X_grid.ravel(), Y_grid.ravel()])
+        z_values = rbf(points).reshape(X_grid.shape)
+        
+        # Find points where z_value is close to z_level
+        tolerance = 0.1  # Adjust this based on your needs
+        mask = np.abs(z_values - z_level) < tolerance
+        
+        # Get the x,y coordinates of these points
+        significant_points = np.column_stack([
+            X_grid[mask],
+            Y_grid[mask]
+        ])
+        
+        return significant_points
+
     def determine_regions_with_splines(self, image_like: Union[ImageModel, ROI], d_subroi: int = 25) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
         """Determine vessel regions by fitting B-spline surfaces to layer peaks.
         
@@ -804,8 +836,8 @@ class ImageProcessor:
         
         # Initialize arrays to store peak positions for each pooled region
         print("Initializing peak positions and layers...")
-        peak_positions = []
-        peak_layers = []
+        image_like.peak_positions = []
+        image_like.peak_layers = []
         for i in range(n_y):
             for j in range(n_x):
                 y_start = i * d_subroi
@@ -830,12 +862,12 @@ class ImageProcessor:
                         closest_idx = np.argmin(distances)
                         
                         # Store the peak position and layer
-                        peak_positions.append((peaks[closest_idx], y_start + d_subroi/2, x_start + d_subroi/2))
-                        peak_layers.append(k)
+                        image_like.peak_positions.append((peaks[closest_idx], y_start + d_subroi/2, x_start + d_subroi/2))
+                        image_like.peak_layers.append(k)
         
         # Convert to numpy arrays for easier filtering
-        peak_positions = np.array(peak_positions)
-        peak_layers = np.array(peak_layers)
+        image_like.peak_positions = np.array(image_like.peak_positions)
+        image_like.peak_layers = np.array(image_like.peak_layers)
         
         # Initialize arrays to store B-spline surfaces
         print("Fitting B-spline surfaces...")
@@ -845,25 +877,24 @@ class ImageProcessor:
         for layer_idx in range(len(self.config.regions)):
             print(f"Fitting B-spline surface for layer {layer_idx}...")
             # Get points for this layer
-            layer_mask = peak_layers == layer_idx
+            layer_mask = image_like.peak_layers == layer_idx
             
             if not np.any(layer_mask):
                 continue
                 
-            layer_points = peak_positions[layer_mask]
-            print(f"Layer {layer_idx} points: {layer_points}")
-            # Extract coordinates
-            z_coords = layer_points[:, 0]
-            y_coords = layer_points[:, 1]
-            x_coords = layer_points[:, 2]
+            layer_points = image_like.peak_positions[layer_mask]
+            # print(f"Layer {layer_idx} points: {layer_points}")
             
             # Create B-spline surface
             from scipy.interpolate import RBFInterpolator
-            
-            # Create the interpolator
+            x_points = layer_points[:, 1]
+            y_points = layer_points[:, 2]
+            z_points = layer_points[:, 0]
+
+            # Create the interpolator - now using all 3 coordinates
             rbf = RBFInterpolator(
-                np.column_stack((y_coords, x_coords)),
-                z_coords,
+                np.column_stack((x_points, y_points)),  # Use all 3D coordinates
+                z_points,  # Target is 0 for the surface
                 kernel='thin_plate_spline',
                 neighbors=20
             )
@@ -882,33 +913,44 @@ class ImageProcessor:
         }
         
         # Create coordinate grids for efficient evaluation
+        print("Generating roi mask...")
         y_coords = np.arange(Y)
         x_coords = np.arange(X)
         Y_grid, X_grid = np.meshgrid(y_coords, x_coords, indexing='ij')
         
         # For each z-slice, evaluate all surfaces at once
         for z in range(Z):
-            # Evaluate all surfaces for this z-slice
-            surface_positions = np.array([
-                rbf(np.column_stack((Y_grid.ravel(), X_grid.ravel()))).reshape(Y, X)
-                for rbf in spline_surfaces
-            ])
+            print(f"Evaluating z-slice {z}...")
+            # Create points for this slice
+            points = np.column_stack([X_grid.ravel(), Y_grid.ravel()])
+            
+            # Evaluate each surface at this z-level
+            surface_values = []
+            for rbf in spline_surfaces:
+                # Get predicted z values for all x,y points
+                predicted_z = rbf(points).reshape(X_grid.shape)
+                # Points where predicted z is less than current z are above the surface
+                surface_values.append(predicted_z < z)
             
             # Create masks for each region
-            superficial_mask = z < surface_positions[0]
-            intermediate_mask = (z >= surface_positions[0]) & (z < surface_positions[1])
-            deep_mask = (z >= surface_positions[1]) & (z < surface_positions[2])
-            
-            # Assign region numbers
-            region_map[z][superficial_mask] = region_numbers['superficial']
-            region_map[z][intermediate_mask] = region_numbers['intermediate']
-            region_map[z][deep_mask] = region_numbers['deep']
+            if len(surface_values) >= 3:
+                # Points above first surface are superficial
+                superficial_mask = surface_values[0]
+                # Points between first and second surface are intermediate
+                intermediate_mask = (~surface_values[0]) & surface_values[1]
+                # Points between second and third surface are deep
+                deep_mask = (~surface_values[1]) & surface_values[2]
+                
+                # Assign region numbers
+                region_map[z][superficial_mask] = region_numbers['superficial']
+                region_map[z][intermediate_mask] = region_numbers['intermediate']
+                region_map[z][deep_mask] = region_numbers['deep']
         
         # Store the region map
         image_like.region = region_map
         
         # Create region bounds dictionary using mean positions
-        mean_peaks = np.array([np.mean(peak_positions[peak_layers == i, 0]) for i in range(len(self.config.regions))])
+        mean_peaks = np.array([np.mean(image_like.peak_positions[image_like.peak_layers == i, 0]) for i in range(len(self.config.regions))])
         mean_sigmas = global_sigmas  # Use global sigmas for now
         
         region_bounds = {

@@ -195,9 +195,9 @@ class VesselAnalysisController:
                     self._log(f"  Width (sigma): {sigma:.1f}", level=2)
                     self._log(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}", level=2)
                 
-                # Create region map volume using ImageProcessor
-                self._log("8b. Creating region map...", level=1)
-                self.roi_model.region = self.processor.create_region_map(self.roi_model, self.roi_model.region_bounds)
+                # # Create region map volume using ImageProcessor
+                # self._log("8b. Creating region map...", level=1)
+                # self.roi_model.region = self.processor.create_region_map(self.roi_model, self.roi_model.region_bounds)
             
 
             # 6. Binarize vessels using ImageProcessor
