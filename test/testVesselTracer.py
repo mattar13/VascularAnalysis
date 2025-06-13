@@ -37,43 +37,6 @@ def main(input_path, config_path, output_dir=None):
         #Plot a heatmap showing only the first slice of the volume in the x direction
         #controller.processor.determine_regions_with_subrois(controller.image_model)
 
-        #Plot peak positions as a 3D scatter plot
-        fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-        
-        # Plot peak points
-        for (i, peak_idx) in enumerate(controller.roi_model.peak_positions):
-            color = 'red' if controller.roi_model.peak_layers[i] == 0 else 'blue' if controller.roi_model.peak_layers[i] == 1 else 'green' if controller.roi_model.peak_layers[i] == 2 else 'yellow'
-            ax.scatter(peak_idx[0], peak_idx[1], peak_idx[2], c=color)
-        
-        # Plot spline surfaces
-        if hasattr(controller.roi_model, 'spline_surfaces'):
-            # Regular grid for evaluation
-            
-            # Plot each surface
-            colors = ['red', 'blue', 'green']
-            for i, rbf in enumerate(controller.roi_model.spline_surfaces):
-                # Create points for evaluation
-                grid_n = 100
-                gx, gy = np.meshgrid(
-                    np.linspace(0, controller.roi_model.volume.shape[2], grid_n),
-                    np.linspace(0, controller.roi_model.volume.shape[1], grid_n),
-                    indexing="ij"
-                )
-                gz = rbf(np.column_stack([gx.ravel(), gy.ravel()])).reshape(gx.shape)
-                ax.plot_surface(gz, gx, gy, rstride=4, cstride=4, alpha=0.6)  # fitted surface          
-               
-        
-        # Set labels and title
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-        ax.set_title('Peak Points and 3D Spline Surfaces')
-        
-        # Set equal aspect ratio
-        ax.set_box_aspect([1,1,1])
-        
-        plt.show()
-
         # # Generate plots using the controller's projection methods
         print("Plotting projections...")
         fig1, ax1 = plot_projections(controller, mode = "volume", source='volume')

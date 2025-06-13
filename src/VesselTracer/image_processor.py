@@ -752,37 +752,30 @@ class ImageProcessor:
                 return region_name
         return 'Outside'
 
-    def get_xy_points_at_z(self, rbf, z_level: float, grid_size: int = 100) -> np.ndarray:
-        """Find x,y points where the spline surface intersects a given z-level.
+    def get_xy_mask_at_z(self, rbf, z_level: float, volume_shape: Tuple[int, int], tolerance: float = 2.0) -> np.ndarray:
+        """Find x,y mask where the spline surface intersects a given z-level.
         
         Args:
             rbf: RBF interpolator for the surface
             z_level: Z-level to find points at
-            grid_size: Size of the grid to sample points from
+            volume_shape: Tuple of (Y, X) dimensions of the volume
+            tolerance: Thickness of the layer in z-units
             
         Returns:
-            np.ndarray: Array of (x,y) points where the surface intersects the z-level
+            np.ndarray: Boolean mask where True indicates points within the layer thickness
         """
-        # Create a grid of x,y points
-        x_coords = np.linspace(0, self.config.micron_roi, grid_size)
-        y_coords = np.linspace(0, self.config.micron_roi, grid_size)
-        X_grid, Y_grid = np.meshgrid(x_coords, y_coords, indexing='ij')
+        # Create a grid of x,y points matching the volume dimensions
+        y_coords = np.arange(volume_shape[0])
+        x_coords = np.arange(volume_shape[1])
+        Y_grid, X_grid = np.meshgrid(y_coords, x_coords, indexing='ij')
         
         # Evaluate the surface at all grid points
         points = np.column_stack([X_grid.ravel(), Y_grid.ravel()])
-        z_values = rbf(points).reshape(X_grid.shape)
+        z_values = rbf(points).reshape(Y_grid.shape)
         
-        # Find points where z_value is close to z_level
-        tolerance = 0.1  # Adjust this based on your needs
+        # Find points within the layer thickness
         mask = np.abs(z_values - z_level) < tolerance
-        
-        # Get the x,y coordinates of these points
-        significant_points = np.column_stack([
-            X_grid[mask],
-            Y_grid[mask]
-        ])
-        
-        return significant_points
+        return mask
 
     def determine_regions_with_splines(self, image_like: Union[ImageModel, ROI], d_subroi: int = 25) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
         """Determine vessel regions by fitting B-spline surfaces to layer peaks.
@@ -912,39 +905,22 @@ class ImageProcessor:
             'deep': 3
         }
         
-        # Create coordinate grids for efficient evaluation
-        print("Generating roi mask...")
-        y_coords = np.arange(Y)
-        x_coords = np.arange(X)
-        Y_grid, X_grid = np.meshgrid(y_coords, x_coords, indexing='ij')
-        
         # For each z-slice, evaluate all surfaces at once
         for z in range(Z):
             print(f"Evaluating z-slice {z}...")
-            # Create points for this slice
-            points = np.column_stack([X_grid.ravel(), Y_grid.ravel()])
             
-            # Evaluate each surface at this z-level
-            surface_values = []
+            # Get masks for each surface at this z-level
+            surface_masks = []
             for rbf in spline_surfaces:
-                # Get predicted z values for all x,y points
-                predicted_z = rbf(points).reshape(X_grid.shape)
-                # Points where predicted z is less than current z are above the surface
-                surface_values.append(predicted_z < z)
+                mask = self.get_xy_mask_at_z(rbf, z, (Y, X))
+                surface_masks.append(mask)
             
             # Create masks for each region
-            if len(surface_values) >= 3:
-                # Points above first surface are superficial
-                superficial_mask = surface_values[0]
-                # Points between first and second surface are intermediate
-                intermediate_mask = (~surface_values[0]) & surface_values[1]
-                # Points between second and third surface are deep
-                deep_mask = (~surface_values[1]) & surface_values[2]
-                
-                # Assign region numbers
-                region_map[z][superficial_mask] = region_numbers['superficial']
-                region_map[z][intermediate_mask] = region_numbers['intermediate']
-                region_map[z][deep_mask] = region_numbers['deep']
+            if len(surface_masks) >= 3:
+                # Assign regions based on masks
+                region_map[z] = (surface_masks[0] * region_numbers['superficial'] + 
+                               surface_masks[1] * region_numbers['intermediate'] + 
+                               surface_masks[2] * region_numbers['deep'])
         
         # Store the region map
         image_like.region = region_map
