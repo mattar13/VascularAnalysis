@@ -112,8 +112,7 @@ def main(input_path, config_path, output_dir=None):
         
     except Exception as e:
         print(f"Error during analysis: {str(e)}")
-        raise
-
+        raise 
 if __name__ == "__main__":
     print("Starting VesselTracer MultiScan...")
     input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path

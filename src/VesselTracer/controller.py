@@ -152,7 +152,7 @@ class VesselAnalysisController:
             else:
                 self._log("Using full volume as ROI", level=1)
                 self.roi_model = self.image_model
-            
+        
             #Normalize? 
             self.roi_model.volume = self.processor.normalize_image(self.roi_model)
 
@@ -181,6 +181,25 @@ class VesselAnalysisController:
                 self._log("5. Smoothing volume...", level=1)
                 self.roi_model.volume = self.processor.smooth_volume(self.roi_model)
             
+                        # 8. Determine regions using VesselTracer
+            if not skip_regions:
+                self._log("8. Determining regions...", level=1)
+                
+                # Use ImageProcessor to determine regions
+                self.roi_model.region_bounds = self.processor.determine_regions(self.roi_model)
+                # Use ImageProcessor to determine regions
+                self.roi_model.peak_positions = self.processor.determine_regions_with_splines(self.roi_model)
+                for region, (peak, sigma, bounds) in self.roi_model.region_bounds.items():
+                    self._log(f"\n{region}:", level=2)
+                    self._log(f"  Peak position: {peak:.1f}", level=2)
+                    self._log(f"  Width (sigma): {sigma:.1f}", level=2)
+                    self._log(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}", level=2)
+                
+                # Create region map volume using ImageProcessor
+                self._log("8b. Creating region map...", level=1)
+                self.roi_model.region = self.processor.create_region_map(self.roi_model, self.roi_model.region_bounds)
+            
+
             # 6. Binarize vessels using ImageProcessor
             if not skip_binarization:
                 self._log("6. Binarizing vessels...", level=1)
@@ -199,24 +218,6 @@ class VesselAnalysisController:
                 )
 
 
-            # 8. Determine regions using VesselTracer
-            if not skip_regions:
-                self._log("8. Determining regions...", level=1)
-                
-                # Use ImageProcessor to determine regions
-                self.roi_model.region_bounds = self.processor.determine_regions(self.roi_model)
-                
-                print(self.roi_model.region_bounds)
-                for region, (peak, sigma, bounds) in self.roi_model.region_bounds.items():
-                    self._log(f"\n{region}:", level=2)
-                    self._log(f"  Peak position: {peak:.1f}", level=2)
-                    self._log(f"  Width (sigma): {sigma:.1f}", level=2)
-                    self._log(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}", level=2)
-                
-                # Create region map volume using ImageProcessor
-                self._log("8b. Creating region map...", level=1)
-                self.roi_model.region = self.processor.create_region_map(self.roi_model, self.roi_model.region_bounds)
-            
             self._log("Analysis complete", level=1, timing=time.time() - start_time)
             
         except Exception as e:
@@ -591,6 +592,14 @@ class VesselAnalysisController:
         self._log(f"Y scan range: {min(yscan_rng)} to {max(yscan_rng)}", level=1)
         self._log(f"Total ROIs: {len(xscan_rng)}x{len(yscan_rng)} = {len(xscan_rng)*len(yscan_rng)}", level=1)
 
+        # Initialize image model arrays if they don't exist
+        if self.image_model.background is None:
+            self.image_model.background = np.zeros_like(self.image_model.volume)
+        if self.image_model.binary is None:
+            self.image_model.binary = np.zeros_like(self.image_model.volume, dtype=np.uint8)
+        if self.image_model.region is None:
+            self.image_model.region = np.zeros_like(self.image_model.volume, dtype=np.uint8)
+
         # Store all paths from all ROIs
         all_paths = {}
         path_id_counter = 0
@@ -643,6 +652,14 @@ class VesselAnalysisController:
                                 'length': path_info['length']
                             }
                             path_id_counter += 1
+
+                    # Store ROI results in image model
+                    if self.roi_model.background is not None:
+                        self.image_model.background[:, roi_min_y:roi_max_y, roi_min_x:roi_max_x] = self.roi_model.background
+                    if self.roi_model.binary is not None:
+                        self.image_model.binary[:, roi_min_y:roi_max_y, roi_min_x:roi_max_x] = self.roi_model.binary
+                    if self.roi_model.region is not None:
+                        self.image_model.region[:, roi_min_y:roi_max_y, roi_min_x:roi_max_x] = self.roi_model.region
 
                     # Store ROI results with position info
                     roi_data = {

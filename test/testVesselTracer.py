@@ -12,7 +12,7 @@ def main(input_path, config_path, output_dir=None):
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
     # Create output directory name based on input file name and timestamp
-    timestamp = datetime.now().strftime("%Y%m%d")
+    timestamp = datetime.now().strftime("%Y%m%d_roi_edge_test")
     file_stem = input_path.stem
     output_dir = Path(f'test/output/from{file_stem}_on{timestamp}')
     # Create output directory
@@ -32,8 +32,17 @@ def main(input_path, config_path, output_dir=None):
             skip_regions=False,
             skip_trace=False,
         )
+        #Plot a heatmap showing only the first slice of the volume in the x direction
+        #controller.processor.determine_regions_with_subrois(controller.image_model)
+
+        #Plot peak positions as a 3D scatter plot
         
-        # Generate plots using the controller's projection methods
+        fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+        for peak_idx in controller.roi_model.peak_positions:
+            ax.scatter(peak_idx[0], peak_idx[1], peak_idx[2])
+        plt.show()
+
+        # # Generate plots using the controller's projection methods
         print("Plotting projections...")
         fig1, ax1 = plot_projections(controller, mode = "volume", source='volume')
         fig1.savefig(output_dir / "volume_projections.png")

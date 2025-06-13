@@ -8,6 +8,7 @@ import concurrent.futures
 from scipy.signal import find_peaks, peak_widths
 from tqdm import tqdm
 import multiprocessing
+from scipy.interpolate import BSpline, make_smoothing_spline
 
 # Try to import CuPy for GPU acceleration
 try:
@@ -141,7 +142,7 @@ class ImageProcessor:
         self._log(f"Normalized range: [{image_like.volume.min():.3f}, {image_like.volume.max():.3f}]", level=2)
         return image_like.volume
 
-    def remove_dead_frames(self, image_like: Union[ImageModel, ROI]) -> np.ndarray:
+    def remove_dead_frames(self, image_like: Union[ImageModel, ROI], operation: str = 'median') -> np.ndarray:
         """Remove frames with unusually low intensity (dead frames).
         
         Supports two methods for dead frame removal:
@@ -164,8 +165,13 @@ class ImageProcessor:
         if image_like.volume is None:
             raise ValueError("No volume data available for dead frame removal")
             
-        # Calculate mean intensity for each z-slice
-        mean_intensities = np.mean(image_like.volume, axis=(1,2))
+        if operation == 'mean':
+            # Calculate mean intensity for each z-slice
+            mean_intensities = np.mean(image_like.volume, axis=(1,2))
+        elif operation == 'median':
+            mean_intensities = np.median(image_like.volume, axis=(1,2))
+        else:
+            raise ValueError(f"Unknown operation: {operation}. Must be either 'mean' or 'median'")  
         
         if method == 'threshold':
             # Use statistical thresholding method
@@ -745,3 +751,85 @@ class ImageProcessor:
             if lower <= z_coord <= upper:
                 return region_name
         return 'Outside'
+
+    def determine_regions_with_splines(self, image_like: Union[ImageModel, ROI], d_subroi: int = 25) -> Dict[str, Tuple[float, float, Tuple[float, float]]]:
+        """Determine vessel regions by fitting B-spline surfaces to layer peaks.
+        
+        This method:
+        1. Creates a pooled/binned version of the volume (x,y pooled, z preserved)
+        2. Calculates mean z-profile for each pooled region
+        3. Finds peaks in each pooled region's z-profile
+        4. Fits a B-spline surface for each layer using the peak positions
+        5. Creates a region map based on the B-spline surfaces
+        
+        Args:
+            image_like: ImageModel or ROI object containing the volume to analyze
+            d_subroi: Size of sub-ROIs in pixels (both width and height)
+            
+        Returns:
+            Dictionary mapping region names to tuples of:
+            (peak_position, sigma, (lower_bound, upper_bound))
+        """
+        d_subroi = self.config.subroi_segmenting_size
+        print("Sub-ROI Segmenting Size: ", d_subroi)
+        start_time = time.time()
+        self._log("Determining vessel regions using B-splines...", level=1)
+        
+        if image_like.volume is None:
+            raise ValueError("No volume data available for region determination")
+            
+        Z, Y, X = image_like.volume.shape
+        
+        # First, get global mean z-profile to establish reference peak positions
+        global_mean_zprofile = np.mean(image_like.volume, axis=(1,2))
+        global_peaks, _ = find_peaks(global_mean_zprofile, distance=self.config.region_peak_distance)
+            
+        # Sort global peaks by z-position (ascending)
+        global_peaks = np.sort(global_peaks[:len(self.config.regions)])
+        
+        # Calculate global peak widths
+        global_widths, _, _, _ = peak_widths(
+            global_mean_zprofile, global_peaks, 
+            rel_height=self.config.region_height_ratio)
+        
+        # Convert global widths to sigmas
+        global_sigmas = global_widths / (self.config.region_n_stds * np.sqrt(2 * np.log(2)))
+        print("Global Peaks: ", global_peaks)
+        print("Global Sigmas: ", global_sigmas)
+        print("Global Widths: ", global_widths)
+        
+        # Calculate number of pooled regions in each dimension
+        n_y = max(1, Y // d_subroi)
+        n_x = max(1, X // d_subroi)
+        print("Number of pooled regions: ", n_y, n_x)
+        
+        # Initialize arrays to store peak positions for each pooled region
+        peak_positions = []
+
+        for i in range(n_y):
+            for j in range(n_x):
+                y_start = i * d_subroi
+                y_end = min((i + 1) * d_subroi, Y)
+                x_start = j * d_subroi
+                x_end = min((j + 1) * d_subroi, X)
+                
+                # Average the region
+                z_profile = np.mean(
+                    image_like.volume[:, y_start:y_end, x_start:x_end],
+                    axis=(1,2)
+                )
+        
+                # Find peaks
+                peaks, _ = find_peaks(z_profile, distance=self.config.region_peak_distance)
+                print(f"Region ({i},{j}) Peaks: ", peaks)
+                
+                if len(peaks) > 0:
+                    # For each global peak position, find the closest local peak
+                    for k, global_peak in enumerate(global_peaks):
+                        # Calculate distances to all local peaks
+                        distances = np.abs(peaks - global_peak)
+                        closest_idx = np.argmin(distances)
+
+                        peak_positions.append((peaks[closest_idx], i, j))
+
+        return peak_positions

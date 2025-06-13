@@ -43,7 +43,7 @@ class VesselTracerConfig:
     region_peak_distance: int = 2
     region_height_ratio: float = 0.80
     region_n_stds: float = 3.0
-    
+    subroi_segmenting_size: int = 25
     # Scale bar settings
     scalebar_length: float = 25.0
     scalebar_x: float = 15.0
@@ -105,7 +105,7 @@ class VesselTracerConfig:
         self.region_peak_distance = config['region']['peak_distance']
         self.region_height_ratio = config['region']['height_ratio']
         self.region_n_stds = config['region']['n_stds']
-        
+        self.subroi_segmenting_size = config['region']['subroi_segmenting_size']
         # Scale bar settings
         self.scalebar_length = config['scalebar']['length']
         self.scalebar_x = config['scalebar']['x']
@@ -156,6 +156,7 @@ class VesselTracerConfig:
                 'height_ratio': self.region_height_ratio,
                 'n_stds': self.region_n_stds
             },
+            'subroi_segmenting_size': self.subroi_segmenting_size,
             'regions': self.regions,
             'scalebar': {
                 'length': self.scalebar_length,
@@ -250,6 +251,7 @@ class VesselTracerConfig:
             ('Region Peak Distance', self.region_peak_distance),
             ('Region Height Ratio', self.region_height_ratio),
             ('Region N Stds', self.region_n_stds),
+            ('Sub-ROI Segmenting Size', self.subroi_segmenting_size),
             ('Verbose Level', self.verbose)
         ]
         
@@ -358,7 +360,7 @@ class VesselTracerConfig:
         print(f"    region_peak_distance -> {self.region_peak_distance}")
         print(f"    region_height_ratio -> {self.region_height_ratio}")
         print(f"    region_n_stds      -> {self.region_n_stds}")
-        
+        print(f"    subroi_segmenting_size -> {self.subroi_segmenting_size}")
         if pixel_sizes:
             print("\nImage Properties:")
             print(f"    pixel_size_x     -> {pixel_sizes[2]:8.3f} [Pixel size in x direction (µm/pixel)]")
