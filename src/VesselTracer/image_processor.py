@@ -830,8 +830,7 @@ class ImageProcessor:
                         distances = np.abs(peaks - global_peak)
                         closest_idx = np.argmin(distances)
                         #Check if peak positions has the point first and if so, don't add it
-                        if (peaks[closest_idx], i, j) not in peak_positions:    
-                            peak_positions.append((peaks[closest_idx], i, j))
-                            peak_layers.append(k)
+                        peak_positions.append((peaks[closest_idx], i, j))
+                        peak_layers.append(k)
 
         return peak_positions, peak_layers
