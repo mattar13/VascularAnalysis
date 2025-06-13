@@ -805,7 +805,7 @@ class ImageProcessor:
         
         # Initialize arrays to store peak positions for each pooled region
         peak_positions = []
-
+        peak_layers = []
         for i in range(n_y):
             for j in range(n_x):
                 y_start = i * d_subroi
@@ -831,6 +831,7 @@ class ImageProcessor:
                         closest_idx = np.argmin(distances)
                         #Check if peak positions has the point first and if so, don't add it
                         if (peaks[closest_idx], i, j) not in peak_positions:    
-                            peak_positions.append((peaks[closest_idx], i, j, k))
+                            peak_positions.append((peaks[closest_idx], i, j))
+                            peak_layers.append(k)
 
-        return peak_positions
+        return peak_positions, peak_layers
