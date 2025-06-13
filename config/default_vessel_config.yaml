@@ -2,7 +2,7 @@
 roi:
   find_roi: True
   micron_roi: 500.0  # ROI size in microns
-  min_x: 500    # X center coordinate
+  min_x: 1500    # X center coordinate
   min_y: 1500     # Y center coordinate
 
 dead_frames:
