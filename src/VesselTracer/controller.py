@@ -186,9 +186,9 @@ class VesselAnalysisController:
                 self._log("8. Determining regions...", level=1)
                 
                 # Use ImageProcessor to determine regions
-                self.roi_model.region_bounds = self.processor.determine_regions(self.roi_model)
+                #self.roi_model.region_bounds = self.processor.determine_regions(self.roi_model)
                 # Use ImageProcessor to determine regions
-                self.roi_model.peak_positions, self.roi_model.peak_layers = self.processor.determine_regions_with_splines(self.roi_model)
+                self.roi_model.region_bounds = self.processor.determine_regions_with_splines(self.roi_model)
                 for region, (peak, sigma, bounds) in self.roi_model.region_bounds.items():
                     self._log(f"\n{region}:", level=2)
                     self._log(f"  Peak position: {peak:.1f}", level=2)
