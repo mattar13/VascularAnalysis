@@ -14,7 +14,7 @@ def main(input_path, config_path, output_dir=None):
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
     # Create output directory name based on input file name and timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_larger_roi")
+    timestamp = datetime.now().strftime("%Y%m%d_wildtype")
     file_stem = input_path.stem
     output_dir = Path(f'test/output/from{file_stem}_on{timestamp}')
     # Create output directory
@@ -124,9 +124,11 @@ def main(input_path, config_path, output_dir=None):
 
 if __name__ == "__main__":
     print("Starting VesselTracer...")
-    # input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
-    # config_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\config\\default_vessel_config.yaml")
     config_path = Path("C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\config\\default_vessel_config.yaml")
-    input_path = Path("F:\\240207_002 (1).czi")
+    # config_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\config\\default_vessel_config.yaml")
     
+    # input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
+    #input_path = Path("F:\\240207_002 (1).czi")
+    input_path = Path("G:\\Data\\Vasculature\\250605_p11_tile scan.czi")
+
     main(input_path, config_path)
