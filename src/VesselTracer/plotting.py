@@ -285,17 +285,16 @@ def plot_paths(controller, figsize=(15, 7), region_colorcode: bool = False, proj
     fig = plt.figure(figsize=figsize)
     gs = plt.GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[1, 1])
     
-    # Create 2D and 3D axes
+    # Create 2D and 3D axes with shared x-axis for xy and xz
     ax_2d_xy = fig.add_subplot(gs[0, 0])
-    ax_2d_xz = fig.add_subplot(gs[0, 1])
-    ax_2d_zy = fig.add_subplot(gs[1, 0])
+    ax_2d_xz = fig.add_subplot(gs[1, 0], sharex=ax_2d_xy)
+    ax_2d_zy = fig.add_subplot(gs[0, 1], sharey=ax_2d_xy)
     ax_3d = fig.add_subplot(gs[1, 1], projection='3d')
     
     # Plot paths on 2D axis
     plot_paths_on_axis(controller, ax_2d_xy, projection='xy', region_colorcode=region_colorcode)
-    plot_paths_on_axis(controller, ax_2d_xz, projection='xz', region_colorcode=region_colorcode)
-    plot_paths_on_axis(controller, ax_2d_zy, projection='zy', region_colorcode=region_colorcode)
-
+    plot_paths_on_axis(controller, ax_2d_xz, projection='zy', region_colorcode=region_colorcode)
+    plot_paths_on_axis(controller, ax_2d_zy, projection='xz', region_colorcode=region_colorcode)
 
     # Plot paths on 3D axis
     plot_paths_on_axis(controller, ax_3d, projection='xyz', region_colorcode=region_colorcode)
@@ -305,6 +304,11 @@ def plot_paths(controller, figsize=(15, 7), region_colorcode: bool = False, proj
     ax_2d_xz.set_title(f'XZ Projection')
     ax_2d_zy.set_title(f'ZY Projection')
     ax_3d.set_title('3D View')
+    
+    # Set equal aspect ratio for 2D projections
+    ax_2d_xy.set_aspect('equal')
+    # ax_2d_xz.set_aspect('equal')
+    # ax_2d_zy.set_aspect('equal')
     
     # Add legend if using region colorcoding
     if region_colorcode and hasattr(controller, 'region_bounds'):
