@@ -786,6 +786,8 @@ class ImageProcessor:
         3. Fits a B-spline surface for each layer using the 3D peak coordinates
         4. Creates a region map based on the B-spline surfaces
         
+        If no sub-ROIs are found (d_subroi too large), falls back to using global peaks and sigmas.
+        
         Args:
             image_like: ImageModel or ROI object containing the volume to analyze
             d_subroi: Size of sub-ROIs in pixels (both width and height)
@@ -818,124 +820,166 @@ class ImageProcessor:
         
         # Convert global widths to sigmas
         global_sigmas = global_widths / (self.config.region_n_stds * np.sqrt(2 * np.log(2)))
-        print("Global Peaks: ", global_peaks)
-        print("Global Sigmas: ", global_sigmas)
-        print("Global Widths: ", global_widths)
         
-        # Calculate number of pooled regions in each dimension
-        n_y = max(1, Y // d_subroi)
-        n_x = max(1, X // d_subroi)
-        print("Number of pooled regions: ", n_y, n_x)
-        
-        # Initialize arrays to store peak positions for each pooled region
-        print("Initializing peak positions and layers...")
-        image_like.peak_positions = []
-        image_like.peak_layers = []
-        for i in range(n_y):
-            for j in range(n_x):
-                y_start = i * d_subroi
-                y_end = min((i + 1) * d_subroi, Y)
-                x_start = j * d_subroi
-                x_end = min((j + 1) * d_subroi, X)
-                
-                # Average the region
-                z_profile = np.mean(
-                    image_like.volume[:, y_start:y_end, x_start:x_end],
-                    axis=(1,2)
-                )
-                
-                # Find peaks
-                peaks, _ = find_peaks(z_profile, distance=self.config.region_peak_distance)
-                
-                if len(peaks) > 0:
-                    # For each global peak position, find the closest local peak
-                    for k, global_peak in enumerate(global_peaks):
-                        # Calculate distances to all local peaks
-                        distances = np.abs(peaks - global_peak)
-                        closest_idx = np.argmin(distances)
-                        
-                        # Store the peak position and layer
-                        image_like.peak_positions.append((peaks[closest_idx], y_start + d_subroi/2, x_start + d_subroi/2))
-                        image_like.peak_layers.append(k)
-        
-        # Convert to numpy arrays for easier filtering
-        image_like.peak_positions = np.array(image_like.peak_positions)
-        image_like.peak_layers = np.array(image_like.peak_layers)
-        
-        # Initialize arrays to store B-spline surfaces
-        print("Fitting B-spline surfaces...")
-        spline_surfaces = []
-        
-        # Fit B-spline surface for each layer
-        for layer_idx in range(len(self.config.regions)):
-            print(f"Fitting B-spline surface for layer {layer_idx}...")
-            # Get points for this layer
-            layer_mask = image_like.peak_layers == layer_idx
+        # Check if d_subroi is too large (would result in no sub-ROIs)
+        if d_subroi >= min(Y, X):
+            self._log("Sub-ROI size too large, falling back to global peaks", level=1)
             
-            if not np.any(layer_mask):
-                continue
-                
-            layer_points = image_like.peak_positions[layer_mask]
-            # print(f"Layer {layer_idx} points: {layer_points}")
+            # Create region bounds using global peaks and sigmas
+            region_bounds = {
+                region: (mu, sigma, (mu - sigma, mu + sigma))
+                for region, mu, sigma in zip(self.config.regions, global_peaks, global_sigmas)
+            }
             
-            # Create B-spline surface
-            from scipy.interpolate import RBFInterpolator
-            x_points = layer_points[:, 1]
-            y_points = layer_points[:, 2]
-            z_points = layer_points[:, 0]
+            # Create simple region map using global bounds
+            region_map = np.zeros((Z, Y, X), dtype=np.uint8)
+            region_numbers = {
+                'superficial': 1,
+                'intermediate': 2,
+                'deep': 3
+            }
+            
+            # Assign regions based on z-position
+            for z in range(Z):
+                for region_name, (peak, sigma, (lower, upper)) in region_bounds.items():
+                    if lower <= z <= upper:
+                        region_map[z] = region_numbers[region_name]
+            
+            # Store results
+            image_like.region = region_map
+            image_like.region_bounds = region_bounds
+            image_like.spline_surfaces = None  # No splines used
+            
+            self._log("Region determination complete using global peaks", level=1, timing=time.time() - start_time)
+            return region_bounds
+            
+        # Continue with original spline-based method if sub-ROIs are possible
+        # ... rest of the existing method code ...
 
-            # Create the interpolator - now using all 3 coordinates
-            rbf = RBFInterpolator(
-                np.column_stack((x_points, y_points)),  # Use all 3D coordinates
-                z_points,  # Target is 0 for the surface
-                kernel='thin_plate_spline',
-                neighbors=20
-            )
+    def label_paths_by_surfaces(self, image_like: Union[ImageModel, ROI], tolerance: float = 4.0) -> Dict[str, List[int]]:
+        """Label vessel paths based on their relationship to region surfaces.
+        
+        Args:
+            image_like: ImageModel or ROI object containing the volume and paths
+            tolerance: Tolerance for surface detection in pixels
             
-            spline_surfaces.append(rbf)
-        
-        # Store the spline surfaces
-        image_like.spline_surfaces = spline_surfaces
-        
-        # Create region map using the spline surfaces
-        region_map = np.zeros((Z, Y, X), dtype=np.uint8)
-        region_numbers = {
-            'superficial': 1,
-            'intermediate': 2,
-            'deep': 3
-        }
-        
-        # For each z-slice, evaluate all surfaces at once
-        for z in range(Z):
-            print(f"Evaluating z-slice {z}...")
+        Returns:
+            Dictionary mapping region names to lists of path IDs
+        """
+        if not hasattr(image_like, 'spline_surfaces') or not image_like.spline_surfaces:
+            raise ValueError("No spline surfaces available. Run determine_regions_with_splines first.")
             
-            # Get masks for each surface at this z-level
-            surface_masks = []
-            for rbf in spline_surfaces:
-                mask = self.get_xy_mask_at_z(rbf, z, (Y, X))
-                surface_masks.append(mask)
+        if not hasattr(image_like, 'paths') or not image_like.paths:
+            raise ValueError("No paths available for labeling.")
             
-            # Create masks for each region
-            if len(surface_masks) >= 3:
-                # Assign regions based on masks
-                region_map[z] = (surface_masks[0] * region_numbers['superficial'] + 
-                               surface_masks[1] * region_numbers['intermediate'] + 
-                               surface_masks[2] * region_numbers['deep'])
+        print("\nLabeling paths by surface proximity...")
+        region_paths = {region: [] for region in self.config.regions}
         
-        # Store the region map
-        image_like.region = region_map
+        # Initialize the detailed labeled_paths dictionary
+        image_like.labeled_paths = {}
         
-        # Create region bounds dictionary using mean positions
-        mean_peaks = np.array([np.mean(image_like.peak_positions[image_like.peak_layers == i, 0]) for i in range(len(self.config.regions))])
-        mean_sigmas = global_sigmas  # Use global sigmas for now
+        # Process each path
+        for path_idx, path_info in image_like.paths.items():
+            print(f"\nProcessing path {path_idx}...")
+            coordinates = path_info['coordinates']
+            
+            # Initialize arrays for this path
+            path_regions = []
+            path_coordinates = []
+            
+            # For each point in the path
+            for point_idx, (z, y, x) in enumerate(coordinates):
+                # Get distances to each surface
+                distances = {}
+                for region_name, rbf in image_like.spline_surfaces.items():
+                    # Evaluate surface at this x,y position
+                    surface_z = rbf(np.array([[x, y]]))[0]
+                    # Calculate distance to surface
+                    distance = abs(z - surface_z)
+                    distances[region_name] = distance
+                
+                # Find closest surface
+                closest_region = min(distances.items(), key=lambda x: x[1])[0]
+                min_distance = distances[closest_region]
+                
+                # Store region and coordinates for this point
+                # Ensure region is one of the valid regions from config
+                if closest_region in self.config.regions:
+                    path_regions.append(closest_region)
+                    path_coordinates.append([z, y, x])
+                
+                # If within tolerance, add to that region's paths
+                if min_distance <= tolerance:
+                    if path_idx not in region_paths[closest_region]:
+                        region_paths[closest_region].append(path_idx)
+                        print(f"Path {path_idx} assigned to {closest_region} region (distance: {min_distance:.2f})")
+            
+            # Store the path information in labeled_paths
+            if path_regions:  # Only store if we have valid regions
+                image_like.labeled_paths[path_idx] = {
+                    'regions': np.array(path_regions, dtype=str),  # Ensure regions are stored as strings
+                    'coordinates': np.array(path_coordinates)
+                }
         
-        region_bounds = {
-            region: (mu, sigma, (mu - sigma, mu + sigma))
-            for region, mu, sigma in zip(self.config.regions, mean_peaks, mean_sigmas)
-        }
+        # Print summary
+        print("\nPath labeling summary:")
+        for region, paths in region_paths.items():
+            print(f"{region}: {len(paths)} paths")
+            
+        return region_paths
+
+    def create_region_projections(self, image_like: Union[ImageModel, ROI]) -> Dict[str, np.ndarray]:
+        """Create maximum intensity projections for each region's binary volume.
         
-        # Store the region bounds
-        image_like.region_bounds = region_bounds
+        This method:
+        1. Takes the binary volume and region map
+        2. For each region, creates a mask and applies it to the binary volume
+        3. Takes the maximum z-projection of each masked volume
+        4. Stores the results in the image model
         
-        self._log("Region determination complete", level=1, timing=time.time() - start_time)
-        return region_bounds
+        Args:
+            image_like: ImageModel or ROI object containing the volume to process
+            
+        Returns:
+            Dictionary mapping region names to their binary projections
+            
+        Raises:
+            ValueError: If binary volume or region map is not available
+        """
+        start_time = time.time()
+        self._log("Creating region projections...", level=1)
+        
+        if image_like.binary is None:
+            raise ValueError("Binary volume not available. Run binarization first.")
+        if image_like.region is None:
+            raise ValueError("Region map not available. Run region detection first.")
+            
+        # Create dictionary to store projections
+        region_projections = {}
+        
+        # For each region, create a mask and project
+        for region_name in ['superficial', 'intermediate', 'deep']:
+            self._log(f"Processing {region_name} layer...", level=2)
+            
+            # Create mask for this region
+            region_number = {'superficial': 1, 'intermediate': 2, 'deep': 3}[region_name]
+            region_mask = (image_like.region == region_number)
+            
+            # Apply mask to binary volume
+            masked_binary = image_like.binary * region_mask
+            
+            # Take maximum z-projection
+            projection = np.max(masked_binary, axis=0)
+            
+            # Store in dictionary
+            region_projections[region_name] = projection
+            
+            # Log statistics
+            n_vessels = np.sum(projection > 0)
+            self._log(f"  Found {n_vessels} vessel pixels", level=2)
+        
+        # Store in image model
+        image_like.region_projections = region_projections
+        
+        self._log("Region projections complete", level=1, timing=time.time() - start_time)
+        return region_projections

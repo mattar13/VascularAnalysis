@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime
 import matplotlib.pyplot as plt
 from VesselTracer import VesselAnalysisController
-from VesselTracer.plotting import plot_projections, plot_regions, plot_paths, plot_projections_w_paths
+from VesselTracer.plotting import plot_projections, plot_regions, plot_paths, plot_projections_w_paths, plot_region_projections
 import numpy as np
 import pandas as pd
 from skimage import measure
@@ -14,7 +14,7 @@ def main(input_path, config_path, output_dir=None):
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
     # Create output directory name based on input file name and timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_roi_edge_test")
+    timestamp = datetime.now().strftime("%Y%m%d_larger_roi")
     file_stem = input_path.stem
     output_dir = Path(f'test/output/from{file_stem}_on{timestamp}')
     # Create output directory
@@ -39,7 +39,7 @@ def main(input_path, config_path, output_dir=None):
 
         # # Generate plots using the controller's projection methods
         print("Plotting projections...")
-        fig1, ax1 = plot_projections(controller, mode = "volume", source='volume')
+        fig1, ax1 = plot_projections(controller, mode = "volume", source='image', show_roi_box=True)
         fig1.savefig(output_dir / "volume_projections.png")
 
         fig2, ax2 = plot_projections(controller, mode = 'volume', source='roi')
@@ -65,6 +65,10 @@ def main(input_path, config_path, output_dir=None):
         print("Plotting projections with paths...")
         fig5, ax5 = plot_projections_w_paths(controller, region_colorcode=True)
         fig5.savefig(output_dir / "projections_w_paths.png")
+        
+        print("Plotting region projections...")
+        fig6, ax6 = plot_region_projections(controller)
+        fig6.savefig(output_dir / "region_projections.png")
         
         plt.close('all')
 
@@ -120,9 +124,9 @@ def main(input_path, config_path, output_dir=None):
 
 if __name__ == "__main__":
     print("Starting VesselTracer...")
-    input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
-    config_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\config\\default_vessel_config.yaml")
-    # config_path = Path("C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\config\\default_vessel_config.yaml")
-    # input_path = Path("F:\\240207_002 (1).czi")
+    # input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
+    # config_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\config\\default_vessel_config.yaml")
+    config_path = Path("C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\config\\default_vessel_config.yaml")
+    input_path = Path("F:\\240207_002 (1).czi")
     
     main(input_path, config_path)

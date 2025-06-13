@@ -216,7 +216,13 @@ class VesselAnalysisController:
                 self.roi_model.paths, self.roi_model.path_stats, self.roi_model.n_paths = self.tracer.trace_paths(
                     binary_volume=self.roi_model.binary,
                 )
+                try:
+                    self.roi_model.labeled_paths = self.processor.label_paths_by_surfaces(self.roi_model)
+                except Exception as e:
+                    self._log(f"Error in labeling paths by surfaces: {str(e)}", level=1)
+                    self.roi_model.labeled_paths = None
 
+                self.roi_model.region_projections = self.processor.create_region_projections(self.roi_model)
 
             self._log("Analysis complete", level=1, timing=time.time() - start_time)
             

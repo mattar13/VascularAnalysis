@@ -15,7 +15,7 @@ def show_max_projection(vol: np.ndarray, ax: Optional[plt.Axes] = None) -> None:
     ax.imshow(np.max(vol, axis=0))
     ax.axis('off')
 
-def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source: str = 'roi', depth_coded: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
+def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source: str = 'roi', depth_coded: bool = False, show_roi_box: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections and intensity profile.
     
     Creates a figure with:
@@ -37,6 +37,7 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
             - 'image': Use image model
         depth_coded: If True, creates depth-coded projections where intensity
                     represents z-position (only works with binary mode)
+        show_roi_box: If True, draws a red box around the ROI coordinates (only works with source='image')
         
     Returns:
         Tuple of (figure, dict of axes)
@@ -141,6 +142,29 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     ax_profile.plot(mean_profile, z_positions, 'b-')
     ax_profile.set_ylim(ax_profile.get_ylim()[::-1])  # Invert y-axis
     ax_profile.set_xlabel('Intensity')
+    
+    # Draw ROI box if requested and source is 'image'
+    if show_roi_box and source == 'image' and controller.roi_model is not None:
+        # Get ROI coordinates
+        min_x = controller.config.min_x
+        min_y = controller.config.min_y
+        micron_roi = controller.config.micron_roi
+        
+        # Convert micron ROI to pixels
+        pixel_roi = int(micron_roi / controller.image_model.pixel_size_x)
+        
+        # Draw box on Z projection (xy view)
+        rect = plt.Rectangle((min_x, min_y), pixel_roi, pixel_roi, 
+                           fill=False, color='red', linewidth=2)
+        ax_z.add_patch(rect)
+        
+        # Draw horizontal lines on Y projection (xz view) to show ROI x-bounds
+        ax_y.axhline(y=min_x, color='red', linestyle='-', linewidth=2)
+        ax_y.axhline(y=min_x + pixel_roi, color='red', linestyle='-', linewidth=2)
+        
+        # Draw vertical lines on X projection (yz view) to show ROI y-bounds
+        ax_x.axvline(x=min_y, color='red', linestyle='-', linewidth=2)
+        ax_x.axvline(x=min_y + pixel_roi, color='red', linestyle='-', linewidth=2)
     
     # Adjust spacing
     plt.subplots_adjust(wspace=0.3, hspace=0.3)
@@ -418,3 +442,56 @@ def plot_regions(controller, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.
     }
     
     return fig, axes
+
+def plot_region_projections(controller, figsize=(15, 5)) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
+    """Plot the binary projections for each region.
+    
+    Creates a figure with three subplots, one for each region's binary projection.
+    
+    Args:
+        controller: VesselTracer instance with loaded data
+        figsize: Figure size tuple (width, height)
+        
+    Returns:
+        Tuple of (figure, dict of axes)
+    """
+    # Create region projections if they don't exist
+    if not hasattr(controller.roi_model, 'region_projections'):
+        controller.processor.create_region_projections(controller.roi_model)
+    
+    # Create figure with three subplots
+    fig, axes = plt.subplots(1, 3, figsize=figsize)
+    
+    # Define colors for each region
+    region_colors = {
+        'superficial': 'tab:purple',
+        'intermediate': 'tab:red',
+        'deep': 'tab:blue'
+    }
+    
+    # Plot each region projection
+    for i, (region_name, ax) in enumerate(zip(['superficial', 'intermediate', 'deep'], axes)):
+        projection = controller.roi_model.region_projections[region_name]
+        
+        # Plot projection
+        im = ax.imshow(projection, cmap='gray')
+        ax.set_title(f'{region_name.capitalize()} Layer')
+        
+        # Add scale bar
+        scalebar_length_pixels = int(50 / controller.image_model.pixel_size_x)  # 50 micron scale bar
+        ax.plot([20, 20 + scalebar_length_pixels], [projection.shape[0] - 20] * 2, 
+                'w-', linewidth=2)
+        
+        # Add colorbar
+        plt.colorbar(im, ax=ax, label='Binary Value')
+    
+    plt.tight_layout()
+    
+    # Return figure and axes dictionary
+    axes_dict = {
+        'superficial': axes[0],
+        'intermediate': axes[1],
+        'deep': axes[2]
+    }
+    
+    return fig, axes_dict
