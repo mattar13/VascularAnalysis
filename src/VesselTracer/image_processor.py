@@ -752,7 +752,7 @@ class ImageProcessor:
                 return region_name
         return 'Outside'
 
-    def get_xy_mask_at_z(self, rbf, z_level: float, volume_shape: Tuple[int, int], tolerance: float = 2.0) -> np.ndarray:
+    def get_xy_mask_at_z(self, rbf, z_level: float, volume_shape: Tuple[int, int], tolerance: float = 4.0) -> np.ndarray:
         """Find x,y mask where the spline surface intersects a given z-level.
         
         Args:
