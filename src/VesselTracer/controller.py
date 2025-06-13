@@ -243,10 +243,15 @@ class VesselAnalysisController:
         if micron_roi is not None:
             print(f"  Size: {self.config.micron_roi} -> {micron_roi} microns")
             self.config.micron_roi = micron_roi
-        
-        # Clear computed results in the components
-        self.processor.clear_processed_data()
-        self.tracer.clear_all_data()
+
+        # Clear ROI model data
+        if self.roi_model:
+            self.roi_model.volume = None
+            self.roi_model.binary = None
+            self.roi_model.background = None
+            self.roi_model.region = None
+            self.roi_model.paths = None
+            self.roi_model.region_bounds = None
                 
         print("ROI updated. Next pipeline step will use new parameters.")
 
@@ -416,26 +421,34 @@ class VesselAnalysisController:
             if not analysis_dfs['path_summary'].empty:
                 analysis_dfs['path_summary'].to_excel(writer, sheet_name='Vessel Paths Summary', index=False)
 
-    def create_paths_dataframe(self, pixel_sizes: Optional[Dict[str, float]] = None) -> pd.DataFrame:
+    def create_paths_dataframe(self, pixel_sizes: Optional[Dict[str, float]] = None, source: str = 'roi') -> pd.DataFrame:
         """Create a pandas DataFrame from the traced paths.
         
         Args:
             pixel_sizes: Optional dictionary of pixel sizes in microns for coordinate conversion
+            source: Source of paths to use ('roi' or 'image')
             
         Returns:
             DataFrame with detailed path information
         """
-        if self.roi_model is None or self.roi_model.paths is None:
+        if source == 'roi':
+            model = self.roi_model
+        elif source == 'image':
+            model = self.image_model
+        else:
+            raise ValueError(f"Invalid source: {source}. Must be one of: roi, image")
+            
+        if model is None or model.paths is None:
             return pd.DataFrame()
             
         vessel_paths_data = []
         
-        for path_id, path_info in self.roi_model.paths.items():
+        for path_id, path_info in model.paths.items():
             coords = path_info['coordinates']
             length = path_info['length']
             
             # Get region for each point
-            regions = [self.processor._get_region_for_z(z, self.roi_model.region_bounds) 
+            regions = [self.processor._get_region_for_z(z, model.region_bounds) 
                       for z in coords[:, 0]]
             
             # Convert coordinates if pixel sizes provided
@@ -463,16 +476,24 @@ class VesselAnalysisController:
                 
         return pd.DataFrame(vessel_paths_data)
     
-    def create_path_summary_dataframe(self, pixel_sizes: Optional[Dict[str, float]] = None) -> pd.DataFrame:
+    def create_path_summary_dataframe(self, pixel_sizes: Optional[Dict[str, float]] = None, source: str = 'roi') -> pd.DataFrame:
         """Create a summary DataFrame with one row per path.
         
         Args:
             pixel_sizes: Optional dictionary of pixel sizes in microns for coordinate conversion
+            source: Source of paths to use ('roi' or 'image')
             
         Returns:
             DataFrame with path summary information
         """
-        if self.roi_model is None or self.roi_model.paths is None:
+        if source == 'roi':
+            model = self.roi_model
+        elif source == 'image':
+            model = self.image_model
+        else:
+            raise ValueError(f"Invalid source: {source}. Must be one of: roi, image")
+            
+        if model is None or model.paths is None:
             return pd.DataFrame()
             
         path_summary_data = []
@@ -485,16 +506,16 @@ class VesselAnalysisController:
         else:
             z_scale = y_scale = x_scale = 1.0
         
-        for path_id, path_info in self.roi_model.paths.items():
+        for path_id, path_info in model.paths.items():
             coords = path_info['coordinates']
             length = path_info['length']
             
             # Get regions for start and end points
-            start_region = self.processor._get_region_for_z(coords[0, 0], self.roi_model.region_bounds)
-            end_region = self.processor._get_region_for_z(coords[-1, 0], self.roi_model.region_bounds)
+            start_region = self.processor._get_region_for_z(coords[0, 0], model.region_bounds)
+            end_region = self.processor._get_region_for_z(coords[-1, 0], model.region_bounds)
             
             # Get all regions traversed
-            regions = [self.processor._get_region_for_z(z, self.roi_model.region_bounds) 
+            regions = [self.processor._get_region_for_z(z, model.region_bounds) 
                       for z in coords[:, 0]]
             unique_regions = list(set(regions))
             
@@ -534,6 +555,7 @@ class VesselAnalysisController:
         
         Performs systematic scanning across the volume using the configured ROI size.
         For each ROI position, runs the full analysis pipeline and stores results.
+        Results are mapped back to the main image model coordinates.
         
         Args:
             skip_smoothing: Whether to skip the smoothing step
@@ -548,8 +570,10 @@ class VesselAnalysisController:
         micron_roi = self.config.micron_roi
         
         # Calculate scan ranges based on volume dimensions and ROI size
-        volume_shape = self.processor.get_volume_shape()
-        pixel_sizes = self.processor.get_pixel_sizes()
+        volume_shape = self.image_model.volume.shape  # Use main image model for dimensions
+        pixel_sizes = (self.image_model.pixel_size_z, 
+                      self.image_model.pixel_size_y, 
+                      self.image_model.pixel_size_x)
         avg_pixel_size = (pixel_sizes[1] + pixel_sizes[2]) / 2  # Y and X pixel sizes
         pixel_roi = int(micron_roi / avg_pixel_size)
         
@@ -560,13 +584,29 @@ class VesselAnalysisController:
         xscan_rng = range(0, X - pixel_roi + 1, pixel_roi)
         yscan_rng = range(0, Y - pixel_roi + 1, pixel_roi)
         
-        self._log(f"Setting up multiscan with {len(xscan_rng)}x{len(yscan_rng)} ROIs", level=2)
-        self._log(f"ROI size: {pixel_roi} pixels ({micron_roi} microns)", level=2)
+        self._log(f"\nMultiscan Configuration:", level=1)
+        self._log(f"Volume dimensions: {volume_shape}", level=1)
+        self._log(f"ROI size: {pixel_roi} pixels ({micron_roi} microns)", level=1)
+        self._log(f"X scan range: {min(xscan_rng)} to {max(xscan_rng)}", level=1)
+        self._log(f"Y scan range: {min(yscan_rng)} to {max(yscan_rng)}", level=1)
+        self._log(f"Total ROIs: {len(xscan_rng)}x{len(yscan_rng)} = {len(xscan_rng)*len(yscan_rng)}", level=1)
+
+        # Store all paths from all ROIs
+        all_paths = {}
+        path_id_counter = 0
 
         # Iterate through ROI positions
         for y in yscan_rng:
             for x in xscan_rng:
-                self._log(f"Processing ROI at position ({x}, {y})", level=2)
+                roi_min_x = x
+                roi_max_x = x + pixel_roi
+                roi_min_y = y
+                roi_max_y = y + pixel_roi
+                
+                self._log(f"\nProcessing ROI at:", level=2)
+                self._log(f"  Position: ({x}, {y})", level=2)
+                self._log(f"  X range: {roi_min_x} to {roi_max_x}", level=2)
+                self._log(f"  Y range: {roi_min_y} to {roi_max_y}", level=2)
                 
                 # Update ROI position (this will clear previous results)
                 self.update_roi_position(x, y)
@@ -582,39 +622,52 @@ class VesselAnalysisController:
                     
                     # Skip if no valid ROI was found
                     if not self.processor.has_roi():
-                        self._log(f"Skipping ROI at ({x}, {y}) - no valid frames found", level=1)
+                        self._log(f"  Skipping ROI - no valid frames found", level=2)
                         continue
 
-                    # Convert local path coordinates to global coordinates
-                    paths_copy = {}
-                    for path_id, path_info in self.tracer.get_paths().items():
+                    # Get paths from current ROI
+                    current_paths = self.roi_model.paths if self.roi_model and self.roi_model.paths else {}
+                    
+                    # Convert local path coordinates to global coordinates and store
+                    for path_id, path_info in current_paths.items():
                         if 'coordinates' in path_info:
                             coords = path_info['coordinates'].copy()
                             # Add ROI offset to convert local to global coordinates
-                            coords[:, 1] += x  # X coordinate
-                            coords[:, 2] += y  # Y coordinate
+                            coords[:, 1] += y  # Y coordinate
+                            coords[:, 2] += x  # X coordinate
                             
-                            # Create updated path info
-                            path_copy = path_info.copy()
-                            path_copy['coordinates'] = coords
-                            paths_copy[path_id] = path_copy
+                            # Create new path with global coordinates
+                            new_path_id = f"path_{path_id_counter}"
+                            all_paths[new_path_id] = {
+                                'coordinates': coords,
+                                'length': path_info['length']
+                            }
+                            path_id_counter += 1
 
-                    # Store results with position info
+                    # Store ROI results with position info
                     roi_data = {
                         'center_x': x + pixel_roi//2,
-                        'min_x': x,
-                        'max_x': x + pixel_roi,
+                        'min_x': roi_min_x,
+                        'max_x': roi_max_x,
                         'center_y': y + pixel_roi//2,
-                        'min_y': y,
-                        'max_y': y + pixel_roi,
-                        'paths': paths_copy
+                        'min_y': roi_min_y,
+                        'max_y': roi_max_y,
+                        'paths': current_paths
                     }
                     roi_results.append(roi_data)
                     
-                    self._log(f"Completed ROI analysis at ({x}, {y})", level=2)
+                    self._log(f"  Completed ROI analysis - Found {len(current_paths)} paths", level=2)
+                    
                 except Exception as e:
-                    self._log(f"Error processing ROI at ({x}, {y}): {str(e)}", level=1)
+                    self._log(f"  Error processing ROI: {str(e)}", level=2)
                     continue
         
-        self._log(f"Completed multiscan analysis of {len(roi_results)} ROIs", level=1)
+        # Store all paths in the main image model
+        if self.image_model:
+            self.image_model.paths = all_paths
+        
+        self._log(f"\nMultiscan Summary:", level=1)
+        self._log(f"Total ROIs processed: {len(roi_results)}", level=1)
+        self._log(f"Total paths found: {len(all_paths)}", level=1)
+        
         return roi_results
