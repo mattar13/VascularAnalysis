@@ -821,7 +821,7 @@ class ImageProcessor:
         
                 # Find peaks
                 peaks, _ = find_peaks(z_profile, distance=self.config.region_peak_distance)
-                print(f"Region ({i},{j}) Peaks: ", peaks)
+                #print(f"Region ({i},{j}) Peaks: ", peaks)
                 
                 if len(peaks) > 0:
                     # For each global peak position, find the closest local peak
@@ -829,7 +829,8 @@ class ImageProcessor:
                         # Calculate distances to all local peaks
                         distances = np.abs(peaks - global_peak)
                         closest_idx = np.argmin(distances)
-
-                        peak_positions.append((peaks[closest_idx], i, j))
+                        #Check if peak positions has the point first and if so, don't add it
+                        if (peaks[closest_idx], i, j) not in peak_positions:    
+                            peak_positions.append((peaks[closest_idx], i, j, k))
 
         return peak_positions
