@@ -129,6 +129,6 @@ if __name__ == "__main__":
     
     # input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
     #input_path = Path("F:\\240207_002 (1).czi")
-    input_path = Path("G:\\Data\\Vasculature\\250605_p11_tile scan.czi")
+    input_path = Path("G:\\Data\\Vasculature\\250605_p11_tile scan\\250605_005.czi")
 
     main(input_path, config_path)

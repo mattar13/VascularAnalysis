@@ -159,12 +159,12 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
         ax_z.add_patch(rect)
         
         # Draw horizontal lines on Y projection (xz view) to show ROI x-bounds
-        ax_y.axhline(y=min_x, color='red', linestyle='-', linewidth=2)
-        ax_y.axhline(y=min_x + pixel_roi, color='red', linestyle='-', linewidth=2)
+        ax_y.axhline(y=min_y, color='red', linestyle='-', linewidth=2)
+        ax_y.axhline(y=min_y + pixel_roi, color='red', linestyle='-', linewidth=2)
         
         # Draw vertical lines on X projection (yz view) to show ROI y-bounds
-        ax_x.axvline(x=min_y, color='red', linestyle='-', linewidth=2)
-        ax_x.axvline(x=min_y + pixel_roi, color='red', linestyle='-', linewidth=2)
+        ax_x.axvline(x=min_x, color='red', linestyle='-', linewidth=2)
+        ax_x.axvline(x=min_x + pixel_roi, color='red', linestyle='-', linewidth=2)
     
     # Adjust spacing
     plt.subplots_adjust(wspace=0.3, hspace=0.3)
