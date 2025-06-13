@@ -36,10 +36,38 @@ def main(input_path, config_path, output_dir=None):
         #controller.processor.determine_regions_with_subrois(controller.image_model)
 
         #Plot peak positions as a 3D scatter plot
-        
         fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-        for peak_idx in controller.roi_model.peak_positions:
-            ax.scatter(peak_idx[0], peak_idx[1], peak_idx[2])
+        
+        # Plot peak points
+        for (i, peak_idx) in enumerate(controller.roi_model.peak_positions):
+            color = 'red' if controller.roi_model.peak_layers[i] == 0 else 'blue' if controller.roi_model.peak_layers[i] == 1 else 'green' if controller.roi_model.peak_layers[i] == 2 else 'yellow'
+            ax.scatter(peak_idx[0], peak_idx[1], peak_idx[2], c=color)
+        
+        # Plot spline surfaces
+        if hasattr(controller.roi_model, 'spline_surfaces'):
+            # Create coordinate grids for surface plotting
+            y_coords = np.linspace(0, controller.roi_model.volume.shape[1], 50)
+            x_coords = np.linspace(0, controller.roi_model.volume.shape[2], 50)
+            Y_grid, X_grid = np.meshgrid(y_coords, x_coords, indexing='ij')
+            
+            # Plot each surface
+            colors = ['red', 'blue', 'green']
+            for i, rbf in enumerate(controller.roi_model.spline_surfaces):
+                # Evaluate surface
+                Z_grid = rbf(np.column_stack((Y_grid.ravel(), X_grid.ravel()))).reshape(Y_grid.shape)
+                
+                # Plot surface
+                surf = ax.plot_surface(X_grid, Y_grid, Z_grid, 
+                                     color=colors[i], 
+                                     alpha=0.3,
+                                     antialiased=True)
+        
+        # Set labels and title
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title('Peak Points and Spline Surfaces')
+        
         plt.show()
 
         # # Generate plots using the controller's projection methods
