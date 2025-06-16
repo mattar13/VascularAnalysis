@@ -278,6 +278,6 @@ class ROI(ImageModel):
         slices[axis] = slice(start, end)
         
         # Apply truncation
-        truncated_volume = volume[tuple(slices)]
-        
-        return truncated_volume
+        self.volume = volume[tuple(slices)]
+
+        return self.volume

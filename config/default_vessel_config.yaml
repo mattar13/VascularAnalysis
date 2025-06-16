@@ -6,8 +6,8 @@ roi:
   min_y: 1250     # Y center coordinate
 
 dead_frames:
-  method: 'threshold'
   remove: True
+  method: 'threshold'
   threshold: 0.5
   frames_from_edge: 15
 
