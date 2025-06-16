@@ -170,82 +170,32 @@ def plot_paths_on_axis(controller, ax,
         ax: Matplotlib axis to plot on
         projection: Projection plane ('xy', 'xz', 'zy', or 'xyz' for 3D plot)
         region_colorcode: If True, color-code paths based on their region
-        paths_to_plot: Optional dictionary of paths to plot. If None, plots all paths.
+        linedwith: Width of the lines
+        alpha: Transparency of the lines
         invert_yaxis: If True, inverts the y-axis to match imshow's top-left origin
     """
     if controller.roi_model.paths is None:
         raise ValueError("No paths found. Run trace_paths() first.")
     
-    # Define colors for regions
-    region_colors = {
-        'superficial': 'tab:purple',
-        'intermediate': 'tab:red',
-        'deep': 'tab:blue',
-        'diving': 'magenta'
-    }
+    # Get projected coordinates and colors
+    x_coords, y_coords, colors = controller.roi_model.project_paths(
+        projection=projection,
+        region_colorcode=region_colorcode,
+        region_bounds=controller.roi_model.region_bounds
+    )
     
-    # Use provided paths or all paths
-    # paths = paths_to_plot if paths_to_plot is not None else controller.paths
-    paths = controller.roi_model.paths
-    #get the region bounds
-    region_bounds = controller.roi_model.region_bounds
-
-    # Plot each path
-    for path_id, path in paths.items():
-        path_coords = path['coordinates']
-        if len(path_coords) > 0:
-            # Extract x, y, z coordinates
-            z_coords = path_coords[:, 0]  # z is first coordinate
-            # print(z_coords)
-            y_coords = path_coords[:, 1]  # y is second coordinate
-            x_coords = path_coords[:, 2]  # x is third coordinate
-            
-            if projection == 'xyz':
-                # For 3D plots, we always plot all coordinates
-                plot_x = x_coords
-                plot_y = y_coords
-                plot_z = z_coords
-            elif projection == 'xy':
-                    plot_x = x_coords
-                    plot_y = y_coords
-            elif projection == 'xz':
-                plot_x = z_coords
-                plot_y = x_coords
-            elif projection == 'zy':
-                plot_x = y_coords
-                plot_y = z_coords
-            else:
-                raise ValueError(f"Invalid projection '{projection}'. Must be one of: ['xy', 'xz', 'zy', 'xyz']")
-            
-            if region_colorcode:
-                # Get the region for each point in the path
-                regions = [controller.processor._get_region_for_z(z, region_bounds) for z in z_coords]
-                unique_regions = np.unique(regions)
-                
-                #print(f"Unique regions: {unique_regions}")
-
-                if len(unique_regions) > 1 or unique_regions[0] == 'Outside':
-                    # Plot as diving vessel if path crosses multiple regions
-                    color = region_colors['diving']
-                    alpha = 0.25
-                    linedwith = 2
-                else:
-                    # Plot in the color of its single region
-                    region = unique_regions[0]
-                    color = region_colors[region]
-                    alpha = 0.8
-                    linewidth = linedwith
-                
-                if projection == 'xyz':
-                    ax.plot(plot_x, plot_y, plot_z, color=color, linewidth=linedwith, alpha=alpha)
-                else:
-                    ax.plot(plot_x, plot_y, color=color, linewidth=linedwith, alpha=alpha)
-            else:
-                # Plot entire path in red
-                if projection == 'xyz':
-                    ax.plot(plot_x, plot_y, plot_z, 'r-', linewidth=linedwith, alpha=alpha)
-                else:
-                    ax.plot(plot_x, plot_y, 'r-', linewidth=linedwith, alpha=alpha)
+    # Plot the paths
+    if projection == 'xyz':
+        # For 3D plots, we need to get z coordinates separately
+        z_coords = np.array([coord[0] for path in controller.roi_model.paths.values() 
+                           for coord in path['coordinates']])
+        ax.plot(x_coords, y_coords, z_coords, color='red', linewidth=linedwith, alpha=alpha)
+    else:
+        # For 2D plots, we can use the projected coordinates directly
+        for color in np.unique(colors):
+            mask = colors == color
+            ax.plot(x_coords[mask], y_coords[mask], color=color, 
+                   linewidth=linedwith, alpha=alpha)
     
     if invert_yaxis:
         ax.invert_yaxis()
