@@ -185,51 +185,6 @@ class ImageModel:
             projection = proj_func(volume, axis=axis)
             
         return projection
-
-@dataclass  
-class ROI(ImageModel):
-    """Data model for Region of Interest with coordinate information."""
-    
-    min_x: int = 0
-    min_y: int = 0
-    max_x: Optional[int] = None
-    max_y: Optional[int] = None
-    dx: Optional[int] = None
-    dy: Optional[int] = None
-    
-    def __post_init__(self):
-        """Initialize derived coordinates."""
-        super().__post_init__()
-        if self.volume is not None and (self.max_x is None or self.max_y is None):
-            _, height, width = self.volume.shape
-            if self.max_x is None:
-                self.max_x = width
-            if self.max_y is None:
-                self.max_y = height
-        
-        if self.max_x is not None and self.dx is None:
-            self.dx = self.max_x - self.min_x
-        if self.max_y is not None and self.dy is None:
-            self.dy = self.max_y - self.min_y
-    
-    def update_coordinates(self, min_x: int, min_y: int, dx: Optional[int] = None, dy: Optional[int] = None) -> None:
-        """Update ROI coordinates."""
-        self.min_x = min_x
-        self.min_y = min_y
-        
-        if dx is not None:
-            self.dx = dx
-            self.max_x = min_x + dx
-        if dy is not None:
-            self.dy = dy
-            self.max_y = min_y + dy
-
-    def get_center(self) -> Tuple[int, int]:
-        """Get center coordinates of ROI."""
-        center_x = self.min_x + (self.dx // 2) if self.dx else self.min_x
-        center_y = self.min_y + (self.dy // 2) if self.dy else self.min_y
-        return (center_x, center_y)
-
     def truncate(self, axis: int, range_values: Tuple[int, int], volume_type: str = 'volume') -> np.ndarray:
         """Truncate the volume along a specified axis within a given range.
         
@@ -281,3 +236,47 @@ class ROI(ImageModel):
         self.volume = volume[tuple(slices)]
 
         return self.volume
+
+@dataclass  
+class ROI(ImageModel):
+    """Data model for Region of Interest with coordinate information."""
+    
+    min_x: int = 0
+    min_y: int = 0
+    max_x: Optional[int] = None
+    max_y: Optional[int] = None
+    dx: Optional[int] = None
+    dy: Optional[int] = None
+    
+    def __post_init__(self):
+        """Initialize derived coordinates."""
+        super().__post_init__()
+        if self.volume is not None and (self.max_x is None or self.max_y is None):
+            _, height, width = self.volume.shape
+            if self.max_x is None:
+                self.max_x = width
+            if self.max_y is None:
+                self.max_y = height
+        
+        if self.max_x is not None and self.dx is None:
+            self.dx = self.max_x - self.min_x
+        if self.max_y is not None and self.dy is None:
+            self.dy = self.max_y - self.min_y
+    
+    def update_coordinates(self, min_x: int, min_y: int, dx: Optional[int] = None, dy: Optional[int] = None) -> None:
+        """Update ROI coordinates."""
+        self.min_x = min_x
+        self.min_y = min_y
+        
+        if dx is not None:
+            self.dx = dx
+            self.max_x = min_x + dx
+        if dy is not None:
+            self.dy = dy
+            self.max_y = min_y + dy
+
+    def get_center(self) -> Tuple[int, int]:
+        """Get center coordinates of ROI."""
+        center_x = self.min_x + (self.dx // 2) if self.dx else self.min_x
+        center_y = self.min_y + (self.dy // 2) if self.dy else self.min_y
+        return (center_x, center_y)
