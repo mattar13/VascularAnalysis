@@ -14,7 +14,7 @@ def main(input_path, config_path, output_dir=None):
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
     # Create output directory name based on input file name and timestamp
-    timestamp = datetime.now().strftime("%Y%m%d_wildtype")
+    timestamp = datetime.now().strftime("%Y%m%d_trunctae")
     file_stem = input_path.stem
     output_dir = Path(f'test/output/from{file_stem}_on{timestamp}')
     # Create output directory
@@ -25,7 +25,7 @@ def main(input_path, config_path, output_dir=None):
         print(f"Loading file: {input_path}")
         controller = VesselAnalysisController(input_path, config_path)
         #controller.activate_gpu()
-        
+        controller.image_model.truncate(axis=0, range_values=(0, 10))
         # Run the complete pipeline using the controller
         print("Running analysis pipeline...")
         controller.run_analysis(
