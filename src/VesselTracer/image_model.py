@@ -229,3 +229,55 @@ class ROI(ImageModel):
         center_x = self.min_x + (self.dx // 2) if self.dx else self.min_x
         center_y = self.min_y + (self.dy // 2) if self.dy else self.min_y
         return (center_x, center_y)
+
+    def truncate(self, axis: int, range_values: Tuple[int, int], volume_type: str = 'volume') -> np.ndarray:
+        """Truncate the volume along a specified axis within a given range.
+        
+        Args:
+            axis: Dimension to truncate along (0: z, 1: y, 2: x)
+            range_values: Tuple of (start, end) indices for truncation
+            volume_type: Type of volume to truncate ('volume', 'binary', 'background', 'region')
+            
+        Returns:
+            np.ndarray: Truncated volume
+            
+        Raises:
+            ValueError: If invalid axis or volume_type specified
+        """
+        # Validate axis
+        if axis not in [0, 1, 2]:
+            raise ValueError("Axis must be 0 (z), 1 (y), or 2 (x)")
+            
+        # Validate range values
+        start, end = range_values
+        if start < 0 or end < start:
+            raise ValueError("Invalid range values. Start must be >= 0 and end must be >= start")
+            
+        # Get the appropriate volume
+        if volume_type == 'binary':
+            if self.binary is None:
+                raise ValueError("Binary volume not available.")
+            volume = self.binary
+        elif volume_type == 'background':
+            if self.background is None:
+                raise ValueError("Background volume not available.")
+            volume = self.background
+        elif volume_type == 'volume':
+            if self.volume is None:
+                raise ValueError("Volume not available.")
+            volume = self.volume
+        elif volume_type == 'region':
+            if self.region is None:
+                raise ValueError("Region map volume not available.")
+            volume = self.region
+        else:
+            raise ValueError(f"volume_type must be one of ['volume', 'binary', 'background', 'region']")
+            
+        # Create slice objects for each dimension
+        slices = [slice(None)] * 3  # Default to full range for all dimensions
+        slices[axis] = slice(start, end)
+        
+        # Apply truncation
+        truncated_volume = volume[tuple(slices)]
+        
+        return truncated_volume
