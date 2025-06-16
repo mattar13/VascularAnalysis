@@ -91,7 +91,8 @@ class ImageModel:
                       background_volume: Optional[np.ndarray] = None,
                       z_range: Optional[Tuple[int, int]] = None,
                       y_range: Optional[Tuple[int, int]] = None,
-                      x_range: Optional[Tuple[int, int]] = None) -> np.ndarray:
+                      x_range: Optional[Tuple[int, int]] = None,
+                      depth_coded: bool = False) -> np.ndarray:
         """Generate a projection of the specified volume along specified axis/axes.
         
         Args:
@@ -114,6 +115,8 @@ class ImageModel:
             z_range: Optional tuple of (start, end) for z dimension
             y_range: Optional tuple of (start, end) for y dimension
             x_range: Optional tuple of (start, end) for x dimension
+            depth_coded: If True, creates depth-coded projections where intensity
+                        represents z-position (only works with binary mode)
                 
         Returns:
             np.ndarray: Projected image
@@ -173,18 +176,33 @@ class ImageModel:
             
         # Apply slices to volume
         volume = volume[tuple(slices)]
+
+        # Handle depth coding if requested
+        if depth_coded and volume_type == 'binary':
+            Z = volume.shape[0]
+            depth_vol = np.zeros_like(volume, dtype=float)
+            for z in range(Z):
+                depth_vol[z] = volume[z] * z
             
-        # Get projection function
-        proj_func = valid_ops[operation]
-        
-        # Calculate projection
-        if isinstance(axis, list):
-            # Special case for xy projection (along z)
-            projection = proj_func(volume, axis=tuple(axis))
+            # Calculate projection
+            if isinstance(axis, list):
+                # Special case for xy projection (along z)
+                projection = valid_ops[operation](depth_vol, axis=tuple(axis))
+            else:
+                projection = valid_ops[operation](depth_vol, axis=axis)
+            
+            # Normalize depth projections to [0,1]
+            projection = projection / (Z-1) if projection.max() > 0 else projection
         else:
-            projection = proj_func(volume, axis=axis)
+            # Calculate regular projection
+            if isinstance(axis, list):
+                # Special case for xy projection (along z)
+                projection = valid_ops[operation](volume, axis=tuple(axis))
+            else:
+                projection = valid_ops[operation](volume, axis=axis)
             
         return projection
+    
     def truncate(self, axis: int, range_values: Tuple[int, int], volume_type: str = 'volume') -> np.ndarray:
         """Truncate the volume along a specified axis within a given range.
         
