@@ -298,3 +298,91 @@ class ROI(ImageModel):
         center_x = self.min_x + (self.dx // 2) if self.dx else self.min_x
         center_y = self.min_y + (self.dy // 2) if self.dy else self.min_y
         return (center_x, center_y)
+
+    def project_paths(self, 
+                     projection: str = 'xy',
+                     region_colorcode: bool = False,
+                     region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Project vessel paths onto specified plane.
+        
+        Args:
+            projection: Projection plane ('xy', 'xz', 'zy', or 'xyz' for 3D plot)
+            region_colorcode: If True, color-code paths based on their region
+            region_bounds: Optional dictionary of region boundaries for color coding
+            
+        Returns:
+            Tuple of (x_coords, y_coords, colors) where:
+            - x_coords: Array of x coordinates for each path point
+            - y_coords: Array of y coordinates for each path point
+            - colors: Array of colors for each path point (if region_colorcode=True)
+            
+        Raises:
+            ValueError: If paths are not available or invalid projection specified
+        """
+        if self.paths is None:
+            raise ValueError("No paths found. Run trace_paths() first.")
+            
+        # Define colors for regions
+        region_colors = {
+            'superficial': 'tab:purple',
+            'intermediate': 'tab:red',
+            'deep': 'tab:blue',
+            'diving': 'magenta'
+        }
+        
+        # Initialize lists to store coordinates and colors
+        all_x_coords = []
+        all_y_coords = []
+        all_colors = []
+        
+        # Process each path
+        for path_id, path in self.paths.items():
+            path_coords = path['coordinates']
+            if len(path_coords) > 0:
+                # Extract x, y, z coordinates
+                z_coords = path_coords[:, 0]  # z is first coordinate
+                y_coords = path_coords[:, 1]  # y is second coordinate
+                x_coords = path_coords[:, 2]  # x is third coordinate
+                
+                # Map coordinates based on projection
+                if projection == 'xy':
+                    plot_x = x_coords
+                    plot_y = y_coords
+                elif projection == 'xz':
+                    plot_x = z_coords
+                    plot_y = x_coords
+                elif projection == 'zy':
+                    plot_x = y_coords
+                    plot_y = z_coords
+                else:
+                    raise ValueError(f"Invalid projection '{projection}'. Must be one of: ['xy', 'xz', 'zy']")
+                
+                # Handle region color coding
+                if region_colorcode and region_bounds is not None:
+                    # Get the region for each point in the path
+                    regions = [self._get_region_for_z(z, region_bounds) for z in z_coords]
+                    unique_regions = np.unique(regions)
+                    
+                    if len(unique_regions) > 1 or unique_regions[0] == 'Outside':
+                        # Plot as diving vessel if path crosses multiple regions
+                        color = region_colors['diving']
+                    else:
+                        # Plot in the color of its single region
+                        region = unique_regions[0]
+                        color = region_colors[region]
+                else:
+                    color = 'red'
+                
+                # Append coordinates and colors
+                all_x_coords.extend(plot_x)
+                all_y_coords.extend(plot_y)
+                all_colors.extend([color] * len(plot_x))
+        
+        return np.array(all_x_coords), np.array(all_y_coords), np.array(all_colors)
+    
+    def _get_region_for_z(self, z: float, region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]]) -> str:
+        """Helper method to determine which region a z-coordinate belongs to."""
+        for region, (peak, sigma, bounds) in region_bounds.items():
+            if bounds[0] <= z <= bounds[1]:
+                return region
+        return 'Outside'
