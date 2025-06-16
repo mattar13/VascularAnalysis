@@ -75,39 +75,20 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     ax_x = fig.add_subplot(gs[1, 0])  # X projection (bottom left)
     ax_profile = fig.add_subplot(gs[1, 1])  # Intensity profile (bottom right)
     
-    if depth_coded and mode == 'binary':
-        # Create depth-coded volume
-        if data_object.binary is None:
-            raise ValueError("Binary data required for depth coding")
-        Z, Y, X = data_object.binary.shape
-        depth_vol = np.zeros_like(data_object.binary, dtype=float)
-        for z in range(Z):
-            depth_vol[z] = data_object.binary[z] * z
-            
-        # Create depth-normalized projections
-        z_proj = np.max(depth_vol, axis=0)
-        y_proj = np.max(depth_vol, axis=1)
-        x_proj = np.max(depth_vol, axis=2)
-        
-        # Normalize depth projections to [0,1]
-        z_proj = z_proj / (Z-1) if z_proj.max() > 0 else z_proj
-        y_proj = y_proj / (Z-1) if y_proj.max() > 0 else y_proj
-        x_proj = x_proj / (Z-1) if x_proj.max() > 0 else x_proj
-        
+    # Get projections using get_projection method
+    z_proj = data_object.get_projection(0, operation='max', volume_type=mode, depth_coded=depth_coded)  # Z projection (xy view)
+    y_proj = data_object.get_projection(1, operation='max', volume_type=mode, depth_coded=depth_coded)  # Y projection (xz view)
+    x_proj = data_object.get_projection(2, operation='max', volume_type=mode, depth_coded=depth_coded)  # X projection (yz view)
+    
+    # Choose colormap based on mode and depth coding
+    if mode == 'region':
+        # Use a discrete colormap for regions
+        cmap = plt.cm.Set1  # Good for discrete categorical data
+    elif depth_coded and mode == 'binary':
         # Use a colormap that shows depth well
         cmap = plt.cm.viridis
     else:
-        # Regular projections using get_projection method
-        z_proj = data_object.get_projection(0, operation='max', volume_type=mode)  # Z projection (xy view)
-        y_proj = data_object.get_projection(1, operation='max', volume_type=mode)  # Y projection (xz view)
-        x_proj = data_object.get_projection(2, operation='max', volume_type=mode)  # X projection (yz view)
-        
-        # Choose colormap based on mode
-        if mode == 'region':
-            # Use a discrete colormap for regions
-            cmap = plt.cm.Set1  # Good for discrete categorical data
-        else:
-            cmap = 'gray'
+        cmap = 'gray'
     
     # Plot Z projection (top left)
     im_z = ax_z.imshow(z_proj, cmap=cmap)
