@@ -255,25 +255,30 @@ class ImageModel:
 
         return self.volume
 
-    def get_path_projection(self, 
-                     projection: str = 'xy',
+    def get_path_coordinates(self, 
                      region_colorcode: bool = False,
-                     region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Project vessel paths onto specified plane.
+                     region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None,
+                     x_range: Optional[Tuple[float, float]] = None,
+                     y_range: Optional[Tuple[float, float]] = None,
+                     z_range: Optional[Tuple[float, float]] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Get coordinates for all vessel paths.
         
         Args:
-            projection: Projection plane ('xy', 'xz', 'zy', or 'xyz' for 3D plot)
             region_colorcode: If True, color-code paths based on their region
             region_bounds: Optional dictionary of region boundaries for color coding
+            x_range: Optional tuple of (min_x, max_x) to filter paths
+            y_range: Optional tuple of (min_y, max_y) to filter paths
+            z_range: Optional tuple of (min_z, max_z) to filter paths
             
         Returns:
-            Tuple of (x_coords, y_coords, colors) where:
+            Tuple of (x_coords, y_coords, z_coords, colors) where:
             - x_coords: Array of x coordinates for each path point
             - y_coords: Array of y coordinates for each path point
+            - z_coords: Array of z coordinates for each path point
             - colors: Array of colors for each path point (if region_colorcode=True)
             
         Raises:
-            ValueError: If paths are not available or invalid projection specified
+            ValueError: If paths are not available
         """
         if self.paths is None:
             raise ValueError("No paths found. Run trace_paths() first.")
@@ -289,6 +294,7 @@ class ImageModel:
         # Initialize lists to store coordinates and colors
         all_x_coords = []
         all_y_coords = []
+        all_z_coords = []
         all_colors = []
         
         # Process each path
@@ -300,18 +306,19 @@ class ImageModel:
                 y_coords = path_coords[:, 1]  # y is second coordinate
                 x_coords = path_coords[:, 2]  # x is third coordinate
                 
-                # Map coordinates based on projection
-                if projection == 'xy':
-                    plot_x = x_coords
-                    plot_y = y_coords
-                elif projection == 'xz':
-                    plot_x = z_coords
-                    plot_y = x_coords
-                elif projection == 'zy':
-                    plot_x = y_coords
-                    plot_y = z_coords
-                else:
-                    raise ValueError(f"Invalid projection '{projection}'. Must be one of: ['xy', 'xz', 'zy']")
+                # Check if path has any points within the specified ranges
+                if x_range is not None:
+                    x_mask = (x_coords >= x_range[0]) & (x_coords <= x_range[1])
+                    if not np.any(x_mask):
+                        continue
+                if y_range is not None:
+                    y_mask = (y_coords >= y_range[0]) & (y_coords <= y_range[1])
+                    if not np.any(y_mask):
+                        continue
+                if z_range is not None:
+                    z_mask = (z_coords >= z_range[0]) & (z_coords <= z_range[1])
+                    if not np.any(z_mask):
+                        continue
                 
                 # Handle region color coding
                 if region_colorcode and region_bounds is not None:
@@ -330,11 +337,12 @@ class ImageModel:
                     color = 'red'
                 
                 # Append coordinates and colors
-                all_x_coords.extend(plot_x)
-                all_y_coords.extend(plot_y)
-                all_colors.extend([color] * len(plot_x))
+                all_x_coords.extend(x_coords)
+                all_y_coords.extend(y_coords)
+                all_z_coords.extend(z_coords)
+                all_colors.extend([color] * len(x_coords))
         
-        return np.array(all_x_coords), np.array(all_y_coords), np.array(all_colors)
+        return np.array(all_x_coords), np.array(all_y_coords), np.array(all_z_coords), np.array(all_colors)
     
     def _get_region_for_z(self, z: float, region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]]) -> str:
         """Helper method to determine which region a z-coordinate belongs to."""
