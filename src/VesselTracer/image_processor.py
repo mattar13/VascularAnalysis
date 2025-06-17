@@ -67,6 +67,8 @@ class ImageProcessor:
             timing: Optional timing information to include
         """
         if self.verbose >= level:
+            if level == 2:
+                message = "\t" + message
             if timing is not None and self.verbose >= 3:
                 print(f"{message} (took {timing:.2f}s)")
             else:
