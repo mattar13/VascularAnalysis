@@ -122,6 +122,7 @@ class VesselAnalysisController:
                     skip_smoothing: bool = False,
                     skip_binarization: bool = False,
                     skip_regions: bool = False, 
+                    skip_closing: bool = True,
                     skip_trace: bool = False) -> None:
         """Run the analysis pipeline without saving any outputs.
         
@@ -206,7 +207,9 @@ class VesselAnalysisController:
                 self.roi_model.binary = self.processor.binarize_volume(self.roi_model)
             
             #Lets try a 3D closing (some larger vessels are not closing properly)
-            self.roi_model.binary = self.processor.morphological_closing(self.roi_model)
+            if not skip_closing:
+                self._log("7. Closing vessels...", level=1)
+                self.roi_model.binary = self.processor.morphological_closing(self.roi_model)
 
             # 7. Trace vessel paths using VesselTracer
             if not skip_trace:

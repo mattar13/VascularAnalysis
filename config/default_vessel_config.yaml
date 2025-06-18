@@ -22,7 +22,7 @@ gaussian_filter:
 
 # Closing settings (for larger vessels)
 closing:
-  close_radius: 5.0  # Closing operation radius in microns
+  close_radius: 0.0  # Closing operation radius in microns
   min_object_size: 64  # Minimum object size to keep (in voxels)
   prune_length: 5  # Length to prune skeleton branches (in voxels)
 
