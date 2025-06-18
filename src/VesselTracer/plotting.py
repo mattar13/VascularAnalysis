@@ -101,9 +101,14 @@ def plot_projections_on_axis(ax, controller, projection: str = 'x', mode: str = 
         pixel_roi = int(micron_roi / controller.image_model.pixel_size_x)
         
         # Draw box on Z projection (xy view)
-        rect = plt.Rectangle((min_x, min_y), pixel_roi, pixel_roi, 
-                           fill=False, color='red', linewidth=2)
-        ax.add_patch(rect)
+        if projection == 'z':
+            rect = plt.Rectangle((min_x, min_y), pixel_roi, pixel_roi, 
+                                fill=False, color='red', linewidth=2)
+            ax.add_patch(rect)
+        elif projection == 'y':
+            ax.hlines(min_x, min_x + pixel_roi, color='red', linewidth=2)
+        elif projection == 'x':
+            ax.vlines(min_y, min_y, min_y + pixel_roi, color='red', linewidth=2)
 
 def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source: str = 'roi', depth_coded: bool = False, show_roi_box: bool = False, full_view: bool = True) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections and intensity profile.
