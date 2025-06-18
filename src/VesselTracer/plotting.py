@@ -15,6 +15,96 @@ def show_max_projection(vol: np.ndarray, ax: Optional[plt.Axes] = None) -> None:
     ax.imshow(np.max(vol, axis=0))
     ax.axis('off')
 
+def plot_projections_on_axis(ax, controller, projection: str = 'x', mode: str = 'binary', source: str = 'roi', depth_coded: bool = False, show_roi_box: bool = False) -> None:
+    """Plot projections on a given axis.
+    
+    Args:
+        ax: Matplotlib axis to plot on
+        controller: VesselTracer instance with loaded data
+        projection: Projection plane ('x', 'y', 'z')
+
+        mode: Visualization mode. Options:
+            - 'volume': Show original volume (global)
+            - 'roi': Show ROI data (local, processed)
+            - 'binary': Show binary vessel volume
+            - 'region': Show region map with color-coded regions
+        source: Source of data to project. Options:
+            - 'roi': Use ROI model
+            - 'image': Use image model
+        depth_coded: If True, creates depth-coded projections where intensity
+                    represents z-position (only works with binary mode)
+        show_roi_box: If True, draws a red box around the ROI coordinates (only works with source='image')
+    """
+    # Validate mode
+    valid_modes = ['volume', 'background', 'binary', 'region']
+    if mode not in valid_modes:
+        raise ValueError(f"Mode must be one of {valid_modes}")
+    
+    # Get the appropriate data object based on source
+    if source == 'roi':
+        if controller.roi_model is None:
+            raise ValueError("ROI model not available. Run analysis pipeline first.")
+        data_object = controller.roi_model
+    else:  # source == 'image'
+        data_object = controller.image_model
+    
+    # Validate that the requested mode is available in the data object
+    if mode == 'volume' and data_object.volume is None:
+        raise ValueError("Volume data not available.")
+    elif mode == 'binary' and (not hasattr(data_object, 'binary') or data_object.binary is None):
+        raise ValueError("Binary data not available. Run binarization first.")
+    elif mode == 'background' and (not hasattr(data_object, 'background') or data_object.background is None):
+        raise ValueError("Background data not available. Run background subtraction first.")
+    elif mode == 'region' and (not hasattr(data_object, 'region') or data_object.region is None):
+        raise ValueError("Region data not available. Run region detection first.")
+    
+    # Get projections using get_projection method
+    if projection == 'z':
+        _proj = data_object.get_projection(0, operation='max', volume_type=mode, depth_coded=depth_coded)  # Z projection (xy view)
+    elif projection == 'y':
+        _proj = data_object.get_projection(1, operation='max', volume_type=mode, depth_coded=depth_coded)  # Y projection (xz view)
+    elif projection == 'x':
+        _proj = data_object.get_projection(2, operation='max', volume_type=mode, depth_coded=depth_coded)  # X projection (yz view)
+    
+    # Choose colormap based on mode and depth coding
+    if mode == 'region':
+        # Use a discrete colormap for regions
+        cmap = plt.cm.Set1  # Good for discrete categorical data
+    elif depth_coded and mode == 'binary':
+        # Use a colormap that shows depth well
+        cmap = plt.cm.viridis
+    else:
+        cmap = 'gray'
+    
+    # Plot Z projection (top left)
+    im_z = ax.imshow(_proj, cmap=cmap)
+    title = f'Z proj ({mode})'
+    if depth_coded and mode == 'binary':
+        title += ' [depth-coded]'
+        plt.colorbar(im_z, ax=ax, label='Z position (normalized)')
+    ax.set_title(title)
+    ax.axis('on')
+    
+    # Add scale bar (assuming we have pixel size)
+    scalebar_length_pixels = int(50 / controller.image_model.pixel_size_x)  # 50 micron scale bar
+    ax.plot([20, 20 + scalebar_length_pixels], [z_proj.shape[0] - 20] * 2, 
+            'w-' if cmap == 'gray' else 'k-', linewidth=2)
+    
+    # Draw ROI box if requested and source is 'image'
+    if show_roi_box and source == 'image' and controller.roi_model is not None:
+        # Get ROI coordinates
+        min_x = controller.config.min_x
+        min_y = controller.config.min_y
+        micron_roi = controller.config.micron_roi
+        
+        # Convert micron ROI to pixels
+        pixel_roi = int(micron_roi / controller.image_model.pixel_size_x)
+        
+        # Draw box on Z projection (xy view)
+        rect = plt.Rectangle((min_x, min_y), pixel_roi, pixel_roi, 
+                           fill=False, color='red', linewidth=2)
+        ax.add_patch(rect)
+
 def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source: str = 'roi', depth_coded: bool = False, show_roi_box: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections and intensity profile.
     
@@ -42,29 +132,6 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     Returns:
         Tuple of (figure, dict of axes)
     """
-    # Validate mode
-    valid_modes = ['volume','background', 'binary', 'region']
-    if mode not in valid_modes:
-        raise ValueError(f"Mode must be one of {valid_modes}")
-    
-    # Get the appropriate data object based on source
-    if source == 'roi':
-        if controller.roi_model is None:
-            raise ValueError("ROI model not available. Run analysis pipeline first.")
-        data_object = controller.roi_model
-    else:  # source == 'image'
-        data_object = controller.image_model
-    
-    # Validate that the requested mode is available in the data object
-    if mode == 'volume' and data_object.volume is None:
-        raise ValueError("Volume data not available.")
-    elif mode == 'binary' and (not hasattr(data_object, 'binary') or data_object.binary is None):
-        raise ValueError("Binary data not available. Run binarization first.")
-    elif mode == 'background' and (not hasattr(data_object, 'background') or data_object.background is None):
-        raise ValueError("Background data not available. Run background subtraction first.")
-    elif mode == 'region' and (not hasattr(data_object, 'region') or data_object.region is None):
-        raise ValueError("Region data not available. Run region detection first.")
-    
     # Create figure with gridspec
     fig = plt.figure(figsize=figsize)
     gs = plt.GridSpec(2, 2, width_ratios=[4, 1], height_ratios=[4, 1])
@@ -75,47 +142,16 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     ax_x = fig.add_subplot(gs[1, 0])  # X projection (bottom left)
     ax_profile = fig.add_subplot(gs[1, 1])  # Intensity profile (bottom right)
     
-    # Get projections using get_projection method
-    z_proj = data_object.get_projection(0, operation='max', volume_type=mode, depth_coded=depth_coded)  # Z projection (xy view)
-    y_proj = data_object.get_projection(1, operation='max', volume_type=mode, depth_coded=depth_coded)  # Y projection (xz view)
-    x_proj = data_object.get_projection(2, operation='max', volume_type=mode, depth_coded=depth_coded)  # X projection (yz view)
+    # Plot projections on each axis
+    plot_projections_on_axis(ax_z, controller, mode=mode, source=source, depth_coded=depth_coded, show_roi_box=show_roi_box)
+    plot_projections_on_axis(ax_y, controller, mode=mode, source=source, depth_coded=depth_coded, show_roi_box=show_roi_box)
+    plot_projections_on_axis(ax_x, controller, mode=mode, source=source, depth_coded=depth_coded, show_roi_box=show_roi_box)
     
-    # Choose colormap based on mode and depth coding
-    if mode == 'region':
-        # Use a discrete colormap for regions
-        cmap = plt.cm.Set1  # Good for discrete categorical data
-    elif depth_coded and mode == 'binary':
-        # Use a colormap that shows depth well
-        cmap = plt.cm.viridis
-    else:
-        cmap = 'gray'
-    
-    # Plot Z projection (top left)
-    im_z = ax_z.imshow(z_proj, cmap=cmap)
-    title = f'Z proj ({mode})'
-    if depth_coded and mode == 'binary':
-        title += ' [depth-coded]'
-        plt.colorbar(im_z, ax=ax_z, label='Z position (normalized)')
-    ax_z.set_title(title)
-    ax_z.axis('on')
-    
-    # Add scale bar (assuming we have pixel size)
-    scalebar_length_pixels = int(50 / controller.image_model.pixel_size_x)  # 50 micron scale bar
-    ax_z.plot([20, 20 + scalebar_length_pixels], [z_proj.shape[0] - 20] * 2, 
-              'w-' if cmap == 'gray' else 'k-', linewidth=2)
-    
-    # Plot Y projection (top right)
-    im_y = ax_y.imshow(y_proj.T, cmap=cmap)  # Transpose y_proj to rotate 90 degrees
-    ax_y.set_title('Y proj')
-    ax_y.axis('on')
-    if depth_coded and mode == 'binary':
-        plt.colorbar(im_y, ax=ax_y, label='Z position (normalized)')
-    
-    # Plot X projection (bottom left)
-    im_x = ax_x.imshow(x_proj, cmap=cmap)
-    ax_x.axis('on')
-    if depth_coded and mode == 'binary':
-        plt.colorbar(im_x, ax=ax_x, label='Z position (normalized)')
+    # Get the appropriate data object based on source
+    if source == 'roi':
+        data_object = controller.roi_model
+    else:  # source == 'image'
+        data_object = controller.image_model
     
     # Plot mean intensity profile (bottom right)
     mean_profile = data_object.get_projection([1, 2], operation='mean', volume_type=mode)
@@ -123,29 +159,6 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     ax_profile.plot(mean_profile, z_positions, 'b-')
     ax_profile.set_ylim(ax_profile.get_ylim()[::-1])  # Invert y-axis
     ax_profile.set_xlabel('Intensity')
-    
-    # Draw ROI box if requested and source is 'image'
-    if show_roi_box and source == 'image' and controller.roi_model is not None:
-        # Get ROI coordinates
-        min_x = controller.config.min_x
-        min_y = controller.config.min_y
-        micron_roi = controller.config.micron_roi
-        
-        # Convert micron ROI to pixels
-        pixel_roi = int(micron_roi / controller.image_model.pixel_size_x)
-        
-        # Draw box on Z projection (xy view)
-        rect = plt.Rectangle((min_x, min_y), pixel_roi, pixel_roi, 
-                           fill=False, color='red', linewidth=2)
-        ax_z.add_patch(rect)
-        
-        # Draw horizontal lines on Y projection (xz view) to show ROI x-bounds
-        ax_y.axhline(y=min_y, color='red', linestyle='-', linewidth=2)
-        ax_y.axhline(y=min_y + pixel_roi, color='red', linestyle='-', linewidth=2)
-        
-        # Draw vertical lines on X projection (yz view) to show ROI y-bounds
-        ax_x.axvline(x=min_x, color='red', linestyle='-', linewidth=2)
-        ax_x.axvline(x=min_x + pixel_roi, color='red', linestyle='-', linewidth=2)
     
     # Adjust spacing
     plt.subplots_adjust(wspace=0.3, hspace=0.3)
@@ -160,7 +173,7 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     
     return fig, axes
 
-def plot_paths_on_axis(controller, ax, 
+def plot_paths_on_axis(ax, controller, 
                        projection='xy', region_colorcode: bool = False, 
                        linedwith = 5, alpha = 0.8, invert_yaxis: bool = False) -> None:
     """Plot vessel paths on a given axis.
@@ -178,10 +191,15 @@ def plot_paths_on_axis(controller, ax,
         raise ValueError("No paths found. Run trace_paths() first.")
     
     # Get projected coordinates and colors
-    x_paths, y_paths, z_paths, colors = controller.roi_model.get_path_coordinates(
-        region_colorcode=region_colorcode,
-        region_bounds=controller.roi_model.region_bounds
-    )
+    if region_colorcode:
+        x_paths, y_paths, z_paths, colors = controller.roi_model.get_path_coordinates(
+            region_colorcode=region_colorcode,
+            region_bounds=controller.roi_model.region_bounds
+        )
+    else:
+        x_paths, y_paths, z_paths, colors = controller.roi_model.get_path_coordinates(
+            region_colorcode=region_colorcode
+        )
     
     for i in range(len(x_paths)):
         if projection == 'xyz':
