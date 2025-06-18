@@ -105,7 +105,7 @@ def plot_projections_on_axis(ax, controller, projection: str = 'x', mode: str = 
                            fill=False, color='red', linewidth=2)
         ax.add_patch(rect)
 
-def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source: str = 'roi', depth_coded: bool = False, show_roi_box: bool = False) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
+def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source: str = 'roi', depth_coded: bool = False, show_roi_box: bool = False, full_view: bool = True) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections and intensity profile.
     
     Creates a figure with:
