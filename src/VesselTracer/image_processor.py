@@ -276,55 +276,11 @@ class ImageProcessor:
         start_time = time.time()
         self._log("Extracting ROI...", level=1)
         
-        if image_model.volume is None:
-            raise ValueError("No volume data available for ROI extraction")
+        roi_model = image_model.create_roi(self.config)
         
-        if not self.config.find_roi:
-            self._log("Using entire volume (ROI finding disabled)", level=2)
-            # Create ROI model using the entire volume
-            roi_model = ROI(
-                volume=image_model.volume.copy(),
-                pixel_size_x=image_model.pixel_size_x,
-                pixel_size_y=image_model.pixel_size_y,
-                pixel_size_z=image_model.pixel_size_z,
-                min_x=0,
-                min_y=0,
-                max_x=image_model.volume.shape[2],
-                max_y=image_model.volume.shape[1]
-            )
-            return roi_model
-        else:
-            # Convert ROI size from microns to pixels
-            roi_x = round(self.config.micron_roi * 1/image_model.pixel_size_x)
-            roi_y = round(self.config.micron_roi * 1/image_model.pixel_size_y)
-            
-            self._log(f"ROI size: {roi_x}x{roi_y} pixels", level=2)
-            
-            # Extract initial ROI using min coordinates
-            roi = image_model.volume[:, 
-                            self.config.min_y:self.config.min_y+roi_y,
-                            self.config.min_x:self.config.min_x+roi_x]
-            
-            valid_frame_range = (0, roi.shape[0]-1)
-                    
-            # Create ROI model
-            roi_model = ROI(
-                volume=roi,
-                pixel_size_x=image_model.pixel_size_x,
-                pixel_size_y=image_model.pixel_size_y,
-                pixel_size_z=image_model.pixel_size_z,
-                min_x=self.config.min_x,
-                min_y=self.config.min_y,
-                dx=roi_x,
-                dy=roi_y
-            )
-            
-            # Store the valid frame range for reference
-            roi_model.valid_frame_range = valid_frame_range
-            
-            self._log(f"ROI extraction complete. Final shape: {roi.shape}", level=2)
-            self._log("ROI extraction complete", level=1, timing=time.time() - start_time)
-            return roi_model
+        self._log(f"ROI extraction complete. Final shape: {roi_model.volume.shape}", level=2)
+        self._log("ROI extraction complete", level=1, timing=time.time() - start_time)
+        return roi_model
 
     def _process_z_slice(self, z_slice: np.ndarray, median_filter_size: int) -> np.ndarray:
         """Process a single z-slice for median filtering to estimate background.
