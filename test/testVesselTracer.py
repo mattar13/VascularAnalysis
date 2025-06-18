@@ -124,11 +124,11 @@ def main(input_path, config_path, output_dir=None):
 
 if __name__ == "__main__":
     print("Starting VesselTracer...")
-    config_path = Path("C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\config\\default_vessel_config.yaml")
-    # config_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\config\\default_vessel_config.yaml")
-    
-    # input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
-    #input_path = Path("F:\\240207_002 (1).czi")
-    input_path = Path("G:\\Data\\Vasculature\\250605_p11_tile scan\\250605_005.czi")
+    # config_path = Path("C:\\Users\\Matt\\PythonDev\\VascularAnalysis\\config\\default_vessel_config.yaml")
+    config_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\config\\default_vessel_config.yaml")
+
+    input_path = Path("C:\\Users\\mtarc\\PythonScripts\\VascularAnalysis\\test\\input\\240207_002.czi")  # Replace with your input file path
+    # input_path = Path("F:\\240207_002 (1).czi")
+    #input_path = Path("G:\\Data\\Vasculature\\250605_p11_tile scan\\250605_005.czi")
 
     main(input_path, config_path)
