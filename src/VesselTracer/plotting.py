@@ -179,8 +179,7 @@ def plot_paths_on_axis(controller, ax,
     
     # Get projected coordinates and colors
     x_coords, y_coords, colors = controller.roi_model.project_paths(
-        projection=projection,
-        region_colorcode=region_colorcode,
+        projection=projection,  
         region_bounds=controller.roi_model.region_bounds
     )
     
