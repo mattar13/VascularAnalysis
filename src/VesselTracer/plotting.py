@@ -143,9 +143,9 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     ax_profile = fig.add_subplot(gs[1, 1])  # Intensity profile (bottom right)
     
     # Plot projections on each axis
-    plot_projections_on_axis(ax_z, controller, mode=mode, source=source, depth_coded=depth_coded, show_roi_box=show_roi_box)
-    plot_projections_on_axis(ax_y, controller, mode=mode, source=source, depth_coded=depth_coded, show_roi_box=show_roi_box)
-    plot_projections_on_axis(ax_x, controller, mode=mode, source=source, depth_coded=depth_coded, show_roi_box=show_roi_box)
+    plot_projections_on_axis(ax_z, controller, projection='z', mode=mode, source=source, depth_coded=depth_coded, show_roi_box=show_roi_box)
+    plot_projections_on_axis(ax_y, controller, projection='y', mode=mode, source=source, depth_coded=depth_coded, show_roi_box=show_roi_box)
+    plot_projections_on_axis(ax_x, controller, projection='x', mode=mode, source=source, depth_coded=depth_coded, show_roi_box=show_roi_box)
     
     # Get the appropriate data object based on source
     if source == 'roi':
