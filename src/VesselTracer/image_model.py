@@ -64,6 +64,7 @@ class ImageModel:
         self.pixel_size_y = _px_um("Y")
         self.pixel_size_z = _px_um("Z")
         self.shape = self.volume.shape
+
     def load_from_tiff(self, file_path: Path, pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)) -> None:
         """Load TIFF file."""
         self.volume = tifffile.imread(file_path)
@@ -292,10 +293,10 @@ class ImageModel:
         }
         
         # Initialize lists to store coordinates and colors
-        all_x_coords = []
-        all_y_coords = []
-        all_z_coords = []
-        all_colors = []
+        all_x_paths = []
+        all_y_paths = []
+        all_z_paths = []
+        all_colors_paths = []
         
         # Process each path
         for path_id, path in self.paths.items():
@@ -307,19 +308,16 @@ class ImageModel:
                 x_coords = path_coords[:, 2]  # x is third coordinate
                 
                 # Check if path has any points within the specified ranges
-                if x_range is not None:
-                    x_mask = (x_coords >= x_range[0]) & (x_coords <= x_range[1])
-                    if not np.any(x_mask):
-                        continue
-                if y_range is not None:
-                    y_mask = (y_coords >= y_range[0]) & (y_coords <= y_range[1])
-                    if not np.any(y_mask):
-                        continue
-                if z_range is not None:
-                    z_mask = (z_coords >= z_range[0]) & (z_coords <= z_range[1])
-                    if not np.any(z_mask):
-                        continue
+                if x_range is None:
+                    all_x_paths.append(x_coords)
                 
+                if y_range is None:
+                    all_y_paths.append(y_coords)
+
+                if z_range is None:
+                    all_z_paths.append(z_coords)
+                
+                #I don't know yet how to handle the case where x_range, y_range, and z_range are not None. Lets work on it later
                 # Handle region color coding
                 if region_colorcode and region_bounds is not None:
                     # Get the region for each point in the path
@@ -328,21 +326,15 @@ class ImageModel:
                     
                     if len(unique_regions) > 1 or unique_regions[0] == 'Outside':
                         # Plot as diving vessel if path crosses multiple regions
-                        color = region_colors['diving']
+                        all_colors_paths.append(region_colors['diving'])
                     else:
                         # Plot in the color of its single region
                         region = unique_regions[0]
-                        color = region_colors[region]
+                        all_colors_paths.append(region_colors[region])
                 else:
-                    color = 'red'
+                    all_colors_paths.append('red')
                 
-                # Append coordinates and colors
-                all_x_coords.extend(x_coords)
-                all_y_coords.extend(y_coords)
-                all_z_coords.extend(z_coords)
-                all_colors.extend([color] * len(x_coords))
-        
-        return np.array(all_x_coords), np.array(all_y_coords), np.array(all_z_coords), np.array(all_colors)
+        return all_x_paths, all_y_paths, all_z_paths, all_colors_paths
     
     def _get_region_for_z(self, z: float, region_bounds: Dict[str, Tuple[float, float, Tuple[float, float]]]) -> str:
         """Helper method to determine which region a z-coordinate belongs to."""
