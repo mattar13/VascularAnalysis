@@ -87,7 +87,7 @@ def plot_projections_on_axis(ax, controller, projection: str = 'x', mode: str = 
     
     # Add scale bar (assuming we have pixel size)
     scalebar_length_pixels = int(50 / controller.image_model.pixel_size_x)  # 50 micron scale bar
-    ax.plot([20, 20 + scalebar_length_pixels], [z_proj.shape[0] - 20] * 2, 
+    ax.plot([20, 20 + scalebar_length_pixels], [_proj.shape[0] - 20] * 2, 
             'w-' if cmap == 'gray' else 'k-', linewidth=2)
     
     # Draw ROI box if requested and source is 'image'
@@ -175,7 +175,7 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
 
 def plot_paths_on_axis(ax, controller, 
                        projection='xy', region_colorcode: bool = False, 
-                       linedwith = 5, alpha = 0.8, invert_yaxis: bool = False) -> None:
+                       linewidth = 5, alpha = 0.8, invert_yaxis: bool = False) -> None:
     """Plot vessel paths on a given axis.
     
     Args:
@@ -183,7 +183,7 @@ def plot_paths_on_axis(ax, controller,
         ax: Matplotlib axis to plot on
         projection: Projection plane ('xy', 'xz', 'zy', or 'xyz' for 3D plot)
         region_colorcode: If True, color-code paths based on their region
-        linedwith: Width of the lines
+        linewidth: Width of the lines
         alpha: Transparency of the lines
         invert_yaxis: If True, inverts the y-axis to match imshow's top-left origin
     """
@@ -203,13 +203,13 @@ def plot_paths_on_axis(ax, controller,
     
     for i in range(len(x_paths)):
         if projection == 'xyz':
-            ax.plot(x_paths[i], y_paths[i], z_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
+            ax.plot(x_paths[i], y_paths[i], z_paths[i], color=colors[i], linewidth=linewidth, alpha=alpha)
         elif projection == 'xy':
-            ax.plot(x_paths[i], y_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
+            ax.plot(x_paths[i], y_paths[i], color=colors[i], linewidth=linewidth, alpha=alpha)
         elif projection == 'xz':
-            ax.plot(x_paths[i], z_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
+            ax.plot(x_paths[i], z_paths[i], color=colors[i], linewidth=linewidth, alpha=alpha)
         elif projection == 'zy':
-            ax.plot(y_paths[i], z_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
+            ax.plot(y_paths[i], z_paths[i], color=colors[i], linewidth=linewidth, alpha=alpha)
     
     if invert_yaxis:
         ax.invert_yaxis()
