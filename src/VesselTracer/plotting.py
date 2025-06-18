@@ -106,9 +106,9 @@ def plot_projections_on_axis(ax, controller, projection: str = 'x', mode: str = 
                                 fill=False, color='red', linewidth=2)
             ax.add_patch(rect)
         elif projection == 'y':
-            ax.hlines(min_x, min_x + pixel_roi, color='red', linewidth=2)
+            ax.hlines(min_x, min_x + pixel_roi, xmin = 0, xmax = _proj.shape[1], color='red', linewidth=2)
         elif projection == 'x':
-            ax.vlines(min_y, min_y, min_y + pixel_roi, color='red', linewidth=2)
+            ax.vlines(min_y, min_y + pixel_roi, ymin = 0, ymax = _proj.shape[0], color='red', linewidth=2)
 
 def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source: str = 'roi', depth_coded: bool = False, show_roi_box: bool = False, full_view: bool = True) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections and intensity profile.
