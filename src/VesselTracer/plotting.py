@@ -178,24 +178,20 @@ def plot_paths_on_axis(controller, ax,
         raise ValueError("No paths found. Run trace_paths() first.")
     
     # Get projected coordinates and colors
-    x_coords, y_coords, colors = controller.roi_model.project_paths(
-        projection=projection,
+    x_paths, y_paths, z_paths, colors = controller.roi_model.get_path_coordinates(
         region_colorcode=region_colorcode,
         region_bounds=controller.roi_model.region_bounds
     )
     
-    # Plot the paths
-    if projection == 'xyz':
-        # For 3D plots, we need to get z coordinates separately
-        z_coords = np.array([coord[0] for path in controller.roi_model.paths.values() 
-                           for coord in path['coordinates']])
-        ax.plot(x_coords, y_coords, z_coords, color='red', linewidth=linedwith, alpha=alpha)
-    else:
-        # For 2D plots, we can use the projected coordinates directly
-        for color in np.unique(colors):
-            mask = colors == color
-            ax.plot(x_coords[mask], y_coords[mask], color=color, 
-                   linewidth=linedwith, alpha=alpha)
+    for i in range(len(x_paths)):
+        if projection == 'xyz':
+            ax.plot(x_paths[i], y_paths[i], z_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
+        elif projection == 'xy':
+            ax.plot(x_paths[i], y_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
+        elif projection == 'xz':
+            ax.plot(x_paths[i], z_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
+        elif projection == 'zy':
+            ax.plot(y_paths[i], z_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
     
     if invert_yaxis:
         ax.invert_yaxis()
