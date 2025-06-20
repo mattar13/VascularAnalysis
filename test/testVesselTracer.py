@@ -25,7 +25,7 @@ def main(input_path, config_path, output_dir=None):
         print(f"Loading file: {input_path}")
         controller = VesselAnalysisController(input_path, config_path)
         #controller.activate_gpu()
-        controller.image_model.truncate(axis=0, range_values=(0, 10))
+        controller.image_model.truncate(axis=0, range_values=(0, 90))
         # Run the complete pipeline using the controller
         print("Running analysis pipeline...")
         controller.run_analysis(
