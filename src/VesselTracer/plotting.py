@@ -189,7 +189,7 @@ def plot_paths_on_axis(controller, ax,
         elif projection == 'xy':
             ax.plot(x_paths[i], y_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
         elif projection == 'xz':
-            ax.plot(x_paths[i], z_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
+            ax.plot(z_paths[i], x_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
         elif projection == 'zy':
             ax.plot(y_paths[i], z_paths[i], color=colors[i], linewidth=linedwith, alpha=alpha)
     
