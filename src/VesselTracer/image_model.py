@@ -5,6 +5,7 @@ import xmltodict
 from czifile import CziFile
 import tifffile
 from typing import Optional, Dict, Any, Tuple, Union, List
+from .config import VesselTracerConfig
 
 @dataclass
 class ImageModel:
@@ -342,6 +343,63 @@ class ImageModel:
             if bounds[0] <= z <= bounds[1]:
                 return region
         return 'Outside'
+
+    def get_center(self) -> Tuple[int, int]:
+        """Get center coordinates of ROI."""
+        center_x = self.min_x + (self.dx // 2) if self.dx else self.min_x
+        center_y = self.min_y + (self.dy // 2) if self.dy else self.min_y
+        return (center_x, center_y)
+
+    def create_roi(self, config: 'VesselTracerConfig') -> 'ROI':
+        """Create a Region of Interest from the current image model.
+        
+        Args:
+            config: Configuration object containing ROI parameters
+            
+        Returns:
+            ROI: New ROI object containing the extracted region
+        """
+        if self.volume is None:
+            raise ValueError("No volume data available for ROI extraction")
+            
+        if not config.find_roi:
+            # Create ROI model using the entire volume
+            return ROI(
+                volume=self.volume.copy(),
+                pixel_size_x=self.pixel_size_x,
+                pixel_size_y=self.pixel_size_y,
+                pixel_size_z=self.pixel_size_z,
+                min_x=0,
+                min_y=0,
+                max_x=self.volume.shape[2],
+                max_y=self.volume.shape[1]
+            )
+        else:
+            # Convert ROI size from microns to pixels
+            roi_x = round(config.micron_roi * 1/self.pixel_size_x)
+            roi_y = round(config.micron_roi * 1/self.pixel_size_y)
+            
+            # Extract initial ROI using min coordinates
+            roi = self.volume[:, 
+                        config.min_y:config.min_y+roi_y,
+                        config.min_x:config.min_x+roi_x]
+            
+            # Create ROI model
+            roi_model = ROI(
+                volume=roi,
+                pixel_size_x=self.pixel_size_x,
+                pixel_size_y=self.pixel_size_y,
+                pixel_size_z=self.pixel_size_z,
+                min_x=config.min_x,
+                min_y=config.min_y,
+                dx=roi_x,
+                dy=roi_y
+            )
+            
+            # Store the valid frame range
+            roi_model.valid_frame_range = (0, roi.shape[0]-1)
+            
+            return roi_model
 
 @dataclass  
 class ROI(ImageModel):
