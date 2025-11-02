@@ -219,6 +219,11 @@ class VesselAnalysisController:
                 self.roi_model.paths, self.roi_model.path_stats, self.roi_model.n_paths = self.tracer.trace_paths(
                     binary_volume=self.roi_model.binary,
                 )
+                
+                # 7b. Smooth paths to reduce jitter
+                self._log("7b. Smoothing paths...", level=1)
+                self.roi_model.paths = self.tracer.smooth_paths(self.roi_model.paths)
+                
                 try:
                     self.roi_model.labeled_paths = self.processor.label_paths_by_surfaces(self.roi_model)
                 except Exception as e:

@@ -44,6 +44,13 @@ class VesselTracerConfig:
     region_height_ratio: float = 0.80
     region_n_stds: float = 3.0
     subroi_segmenting_size: int = 25
+    
+    # Path smoothing settings
+    smooth_paths: bool = True
+    smooth_method: str = 'gaussian'  # 'gaussian' or 'spline'
+    smooth_sigma: float = 2.0
+    spline_smoothing: float = 0.5
+    
     # Scale bar settings
     scalebar_length: float = 25.0
     scalebar_x: float = 15.0
@@ -106,6 +113,13 @@ class VesselTracerConfig:
         self.region_height_ratio = config['region']['height_ratio']
         self.region_n_stds = config['region']['n_stds']
         self.subroi_segmenting_size = config['region']['subroi_segmenting_size']
+        
+        # Smoothing settings
+        if 'smoothing' in config:
+            self.smooth_paths = config['smoothing'].get('enabled', True)
+            self.smooth_method = config['smoothing'].get('method', 'gaussian')
+            self.smooth_sigma = config['smoothing'].get('sigma', 2.0)
+            self.spline_smoothing = config['smoothing'].get('spline_smoothing', 0.5)
         # Scale bar settings
         self.scalebar_length = config['scalebar']['length']
         self.scalebar_x = config['scalebar']['x']

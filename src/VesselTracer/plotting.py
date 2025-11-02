@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Dict, Any, Optional, Tuple, List
 from mpl_toolkits.mplot3d import Axes3D
+from scipy.ndimage import gaussian_filter1d
+from scipy.interpolate import splprep, splev
 
 def show_max_projection(vol: np.ndarray, ax: Optional[plt.Axes] = None) -> None:
     """Show maximum intensity projection of a volume.
@@ -449,3 +451,155 @@ def plot_region_projections(controller, figsize=(15, 5)) -> Tuple[plt.Figure, Di
     }
     
     return fig, axes_dict
+
+
+def smooth_path_coordinates(x, y, z, method='gaussian', sigma=2.0, spline_smoothing=0.5, num_points=None):
+    """Smooth vessel path coordinates to reduce jitter.
+    
+    Args:
+        x: Array of x coordinates
+        y: Array of y coordinates
+        z: Array of z coordinates
+        method: Smoothing method - 'gaussian' or 'spline'
+        sigma: Standard deviation for Gaussian smoothing (only for 'gaussian' method)
+        spline_smoothing: Smoothing parameter for spline (only for 'spline' method)
+                         0 = no smoothing, larger values = more smoothing
+        num_points: Number of points in the smoothed path (only for 'spline' method)
+                   If None, uses the original number of points
+    
+    Returns:
+        Tuple of (x_smooth, y_smooth, z_smooth) with smoothed coordinates
+    """
+    if len(x) < 4:
+        # Path too short to smooth, return as-is
+        return x, y, z
+    
+    if method == 'gaussian':
+        # Apply Gaussian filter to smooth coordinates
+        x_smooth = gaussian_filter1d(x, sigma=sigma, mode='nearest')
+        y_smooth = gaussian_filter1d(y, sigma=sigma, mode='nearest')
+        z_smooth = gaussian_filter1d(z, sigma=sigma, mode='nearest')
+        
+        return x_smooth, y_smooth, z_smooth
+    
+    elif method == 'spline':
+        # Use B-spline interpolation for smooth curves
+        # Create parametric variable
+        points = np.array([x, y, z]).T
+        
+        # Fit a B-spline to the path
+        try:
+            # k is the degree of the spline (3 = cubic)
+            k = min(3, len(x) - 1)
+            tck, u = splprep([x, y, z], s=spline_smoothing, k=k)
+            
+            # Evaluate the spline at new points
+            if num_points is None:
+                num_points = len(x)
+            u_new = np.linspace(0, 1, num_points)
+            x_smooth, y_smooth, z_smooth = splev(u_new, tck)
+            
+            return x_smooth, y_smooth, z_smooth
+        except:
+            # If spline fitting fails, fall back to Gaussian smoothing
+            return smooth_path_coordinates(x, y, z, method='gaussian', sigma=sigma)
+    
+    else:
+        raise ValueError(f"Unknown smoothing method: {method}. Use 'gaussian' or 'spline'.")
+
+
+def plot_vessel_paths_3d(controller, 
+                         source: str = 'roi',
+                         region_colorcode: bool = True,
+                         linewidth: float = 1.5,
+                         alpha: float = 0.7,
+                         figsize: Tuple[int, int] = (12, 10),
+                         elev: float = 20,
+                         azim: float = 45,
+                         show_region_planes: bool = True) -> Tuple[plt.Figure, Axes3D]:
+    """Plot vessel paths in 3D with noodly lines.
+    
+    Note: Path smoothing is now handled in the analysis pipeline (VesselTracer.smooth_paths).
+    This function plots the paths as they are stored in the model.
+    
+    Args:
+        controller: VesselAnalysisController instance
+        source: Data source ('roi' or 'image')
+        region_colorcode: If True, color paths by vascular region
+        linewidth: Width of the path lines
+        alpha: Transparency of the lines (0-1)
+        figsize: Figure size as (width, height)
+        elev: Elevation angle for 3D view
+        azim: Azimuth angle for 3D view
+        show_region_planes: If True, show semi-transparent planes at region boundaries
+        
+    Returns:
+        Tuple of (figure, 3D axes)
+    """
+    # Get the appropriate data model
+    if source == 'roi':
+        if controller.roi_model is None:
+            raise ValueError("ROI model not available. Run analysis pipeline first.")
+        model = controller.roi_model
+    else:
+        model = controller.image_model
+    
+    # Check if paths exist
+    if model.paths is None or len(model.paths) == 0:
+        raise ValueError("No paths found. Run trace_paths() first.")
+    
+    # Get path coordinates
+    x_paths, y_paths, z_paths, colors = model.get_path_coordinates(
+        region_colorcode=region_colorcode,
+        region_bounds=model.region_bounds if region_colorcode else None
+    )
+    
+    # Create 3D figure
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Plot each path as a line (paths are already smoothed in the pipeline)
+    for i, (x, y, z, color) in enumerate(zip(x_paths, y_paths, z_paths, colors)):
+        ax.plot(x, y, z, color=color, linewidth=linewidth, alpha=alpha)
+    
+    # Add region boundary planes if requested
+    if show_region_planes and model.region_bounds is not None:
+        # Get volume dimensions
+        z_max, y_max, x_max = model.volume.shape
+        x_grid, y_grid = np.meshgrid([0, x_max], [0, y_max])
+        
+        # Plot semi-transparent planes at region boundaries
+        for region_name, (z_min, z_max_bound, _) in model.region_bounds.items():
+            # Plot lower boundary
+            z_plane_min = np.full_like(x_grid, z_min)
+            ax.plot_surface(x_grid, y_grid, z_plane_min, 
+                          alpha=0.1, color='gray', linewidth=0)
+            
+            # Plot upper boundary
+            z_plane_max = np.full_like(x_grid, z_max_bound)
+            ax.plot_surface(x_grid, y_grid, z_plane_max, 
+                          alpha=0.1, color='gray', linewidth=0)
+    
+    # Set labels and title
+    ax.set_xlabel('X (pixels)', fontsize=12)
+    ax.set_ylabel('Y (pixels)', fontsize=12)
+    ax.set_zlabel('Z (depth, pixels)', fontsize=12)
+    ax.set_title(f'3D Vessel Paths ({source.upper()} volume)', fontsize=14, fontweight='bold')
+    
+    # Set viewing angle
+    ax.view_init(elev=elev, azim=azim)
+    
+    # Add legend if region color-coded
+    if region_colorcode:
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor='tab:purple', alpha=alpha, label='Superficial'),
+            Patch(facecolor='tab:red', alpha=alpha, label='Intermediate'),
+            Patch(facecolor='tab:blue', alpha=alpha, label='Deep'),
+            Patch(facecolor='magenta', alpha=alpha, label='Diving')
+        ]
+        ax.legend(handles=legend_elements, loc='upper left', framealpha=0.8)
+    
+    plt.tight_layout()
+    
+    return fig, ax

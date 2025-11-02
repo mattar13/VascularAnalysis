@@ -3,6 +3,8 @@ import numpy as np
 from skimage.morphology import skeletonize as sk_skeletonize
 from skan import Skeleton, summarize
 from scipy.signal import find_peaks, peak_widths
+from scipy.ndimage import gaussian_filter1d
+from scipy.interpolate import splprep, splev
 import pandas as pd
 import time
 
@@ -97,6 +99,64 @@ class VesselTracer:
         self._log("Path tracing complete", level=1, timing=time.time() - start_time)    
         return paths, stats, n_paths
     
+    def smooth_paths(self, paths: Dict[str, Any]) -> Dict[str, Any]:
+        """Smooth vessel path coordinates to reduce jitter.
+        
+        Args:
+            paths: Dictionary of paths with 'coordinates' key
+            
+        Returns:
+            Updated paths dictionary with smoothed coordinates
+        """
+        if not self.config.smooth_paths:
+            self._log("Path smoothing disabled in config", level=2)
+            return paths
+        
+        start_time = time.time()
+        self._log(f"Smoothing {len(paths)} vessel paths...", level=1)
+        self._log(f"Method: {self.config.smooth_method}, Sigma: {self.config.smooth_sigma}", level=2)
+        
+        smoothed_count = 0
+        for path_id, path_info in paths.items():
+            coords = path_info['coordinates']
+            
+            if len(coords) < 4:
+                # Path too short to smooth
+                continue
+            
+            # Extract coordinates
+            z = coords[:, 0]
+            y = coords[:, 1]
+            x = coords[:, 2]
+            
+            # Apply smoothing
+            if self.config.smooth_method == 'gaussian':
+                z_smooth = gaussian_filter1d(z, sigma=self.config.smooth_sigma, mode='nearest')
+                y_smooth = gaussian_filter1d(y, sigma=self.config.smooth_sigma, mode='nearest')
+                x_smooth = gaussian_filter1d(x, sigma=self.config.smooth_sigma, mode='nearest')
+                
+            elif self.config.smooth_method == 'spline':
+                try:
+                    k = min(3, len(x) - 1)
+                    tck, u = splprep([z, y, x], s=self.config.spline_smoothing, k=k)
+                    u_new = np.linspace(0, 1, len(x))
+                    z_smooth, y_smooth, x_smooth = splev(u_new, tck)
+                except:
+                    # Fall back to Gaussian if spline fails
+                    z_smooth = gaussian_filter1d(z, sigma=self.config.smooth_sigma, mode='nearest')
+                    y_smooth = gaussian_filter1d(y, sigma=self.config.smooth_sigma, mode='nearest')
+                    x_smooth = gaussian_filter1d(x, sigma=self.config.smooth_sigma, mode='nearest')
+            else:
+                self._log(f"Unknown smoothing method: {self.config.smooth_method}, skipping", level=1)
+                continue
+            
+            # Update coordinates
+            path_info['coordinates'] = np.column_stack([z_smooth, y_smooth, x_smooth])
+            smoothed_count += 1
+        
+        self._log(f"Smoothed {smoothed_count} paths", level=2)
+        self._log("Path smoothing complete", level=1, timing=time.time() - start_time)
+        return paths
 
     #These functions are for the region determination
     def _get_region_for_z(self, z_coord: float, 

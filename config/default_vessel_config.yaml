@@ -42,6 +42,13 @@ regions:
  - intermediate
  - deep
 
+# Path smoothing settings (to reduce jitter in vessel traces)
+smoothing:
+  enabled: True  # Enable/disable path smoothing
+  method: 'gaussian'  # Smoothing method: 'gaussian' or 'spline'
+  sigma: 2.0  # Gaussian smoothing strength (higher = smoother)
+  spline_smoothing: 0.5  # Spline smoothing parameter (lower = less smoothing)
+
 # Scale bar settings for plotting
 scalebar:
   length: 25.0  # Length in plot units

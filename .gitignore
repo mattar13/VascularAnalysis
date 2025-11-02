@@ -6,3 +6,4 @@ test/results/
 __pycache__/
 /src/VascularAnalysis.egg-info/
 /VascularAnalysis.egg-info/
+.conda/

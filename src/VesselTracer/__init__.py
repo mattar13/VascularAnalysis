@@ -17,7 +17,7 @@ from .image_model import ImageModel, ROI
 from .image_processor import ImageProcessor
 from .vessel_tracer import VesselTracer
 from .controller import VesselAnalysisController
-from .plotting import show_max_projection
+from .plotting import show_max_projection, plot_vessel_paths_3d, smooth_path_coordinates
 
 # Keep the old tracer.py import for backward compatibility
 # from .tracer import VesselTracer as LegacyVesselTracer
@@ -34,4 +34,6 @@ __all__ = [
     'ImageProcessor',
     # 'LegacyVesselTracer',
     'show_max_projection',
+    'plot_vessel_paths_3d',
+    'smooth_path_coordinates',
 ]
