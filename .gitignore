@@ -4,3 +4,4 @@ test/output/
 test/input/
 test/results/
 src/DataManager/__pycache__/
+src/VesselTracer/__pycache__/
