@@ -3,3 +3,4 @@ test/output_cpu/
 test/output/
 test/input/
 test/results/
+src/DataManager/__pycache__/
