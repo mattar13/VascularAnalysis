@@ -3,6 +3,10 @@ from pathlib import Path
 from typing import Optional, List, Union, Tuple, Dict, Any
 import yaml
 
+DEFAULT_REGIONS = ['superficial', 'intermediate', 'deep']
+DEFAULT_REGION_COLORS = ['orange', 'green', 'cyan']
+DEFAULT_DIVING_COLOR = 'cyan'
+
 
 @dataclass
 class VesselTracerConfig:
@@ -40,6 +44,8 @@ class VesselTracerConfig:
     
     # Region settings
     regions: List[str] = None
+    region_colors: Optional[List[str]] = None
+    diving_color: str = DEFAULT_DIVING_COLOR
     region_peak_distance: int = 2
     region_height_ratio: float = 0.80
     region_n_stds: float = 3.0
@@ -62,7 +68,14 @@ class VesselTracerConfig:
     def __post_init__(self):
         """Initialize default regions and automatically load config if path provided."""
         if self.regions is None:
-            self.regions = ['superficial', 'intermediate', 'deep']
+            self.regions = DEFAULT_REGIONS.copy()
+        else:
+            self.regions = list(self.regions)
+        if self.region_colors is None:
+            self.region_colors = DEFAULT_REGION_COLORS.copy()
+        else:
+            self.region_colors = list(self.region_colors)
+        self._ensure_region_colors()
             
         # Automatically load config if path is provided
         if self.config_path is not None:
@@ -107,12 +120,25 @@ class VesselTracerConfig:
         # Binarization settings
         self.binarization_method = config['binarization']['method']
         
-        # Region settings
-        self.regions = config.get('regions', ['superficial', 'intermediate', 'deep'])
-        self.region_peak_distance = config['region']['peak_distance']
-        self.region_height_ratio = config['region']['height_ratio']
-        self.region_n_stds = config['region']['n_stds']
-        self.subroi_segmenting_size = config['region']['subroi_segmenting_size']
+        # Region settings (support both legacy list and new structured format)
+        regions_config = config.get('regions', DEFAULT_REGIONS)
+        if isinstance(regions_config, dict):
+            self.regions = list(regions_config.get('names', DEFAULT_REGIONS))
+            self.region_colors = list(regions_config.get('colors', DEFAULT_REGION_COLORS))
+            self.diving_color = regions_config.get('diving_color', DEFAULT_DIVING_COLOR)
+        else:
+            self.regions = list(regions_config)
+            self.region_colors = list(config.get('region_colors', DEFAULT_REGION_COLORS))
+            self.diving_color = config.get('diving_color', DEFAULT_DIVING_COLOR)
+        self._ensure_region_colors()
+        region_settings = config['region']
+        self.region_peak_distance = region_settings['peak_distance']
+        self.region_height_ratio = region_settings['height_ratio']
+        self.region_n_stds = region_settings['n_stds']
+        self.subroi_segmenting_size = region_settings.get(
+            'subroi_segmenting_size',
+            config.get('subroi_segmenting_size', self.subroi_segmenting_size)
+        )
         
         # Smoothing settings
         if 'smoothing' in config:
@@ -168,10 +194,14 @@ class VesselTracerConfig:
             'region': {
                 'peak_distance': self.region_peak_distance,
                 'height_ratio': self.region_height_ratio,
-                'n_stds': self.region_n_stds
+                'n_stds': self.region_n_stds,
+                'subroi_segmenting_size': self.subroi_segmenting_size
             },
-            'subroi_segmenting_size': self.subroi_segmenting_size,
-            'regions': self.regions,
+            'regions': {
+                'names': self.regions,
+                'colors': self.region_colors,
+                'diving_color': self.diving_color
+            },
             'scalebar': {
                 'length': self.scalebar_length,
                 'x': self.scalebar_x,
@@ -262,6 +292,8 @@ class VesselTracerConfig:
             ('Prune Length', self.prune_length),
             ('Binarization Method', self.binarization_method),
             ('Regions', ', '.join(self.regions)),
+            ('Region Colors', ', '.join(self.region_colors)),
+            ('Diving Color', self.diving_color),
             ('Region Peak Distance', self.region_peak_distance),
             ('Region Height Ratio', self.region_height_ratio),
             ('Region N Stds', self.region_n_stds),
@@ -371,6 +403,8 @@ class VesselTracerConfig:
         
         print("\nRegion Settings:")
         print(f"    regions          -> {self.regions}")
+        print(f"    region_colors    -> {self.region_colors}")
+        print(f"    diving_color     -> {self.diving_color}")
         print(f"    region_peak_distance -> {self.region_peak_distance}")
         print(f"    region_height_ratio -> {self.region_height_ratio}")
         print(f"    region_n_stds      -> {self.region_n_stds}")
@@ -378,6 +412,23 @@ class VesselTracerConfig:
         if pixel_sizes:
             print("\nImage Properties:")
             print(f"    pixel_size_x     -> {pixel_sizes[2]:8.3f} [Pixel size in x direction (µm/pixel)]")
-            print(f"    pixel_size_y     -> {pixel_sizes[1]:8.3f} [Pixel size in y direction (µm/pixel)]")
-            print(f"    pixel_size_z     -> {pixel_sizes[0]:8.3f} [Pixel size in z direction (µm/pixel)]")
+        print(f"    pixel_size_y     -> {pixel_sizes[1]:8.3f} [Pixel size in y direction (µm/pixel)]")
+        print(f"    pixel_size_z     -> {pixel_sizes[0]:8.3f} [Pixel size in z direction (µm/pixel)]")
         print("\n")
+
+    def _ensure_region_colors(self) -> None:
+        """Ensure region_colors aligns with defined regions."""
+        if not self.regions:
+            self.regions = DEFAULT_REGIONS.copy()
+        if not self.region_colors:
+            self.region_colors = DEFAULT_REGION_COLORS.copy()
+        if len(self.region_colors) < len(self.regions):
+            last_color = self.region_colors[-1]
+            deficit = len(self.regions) - len(self.region_colors)
+            self.region_colors.extend([last_color] * deficit)
+
+    def get_region_color_map(self) -> Dict[str, str]:
+        """Return mapping from region names to configured colors."""
+        self._ensure_region_colors()
+        return {region: self.region_colors[i % len(self.region_colors)] 
+                for i, region in enumerate(self.regions)}

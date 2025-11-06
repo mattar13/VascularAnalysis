@@ -5,7 +5,7 @@ import xmltodict
 from czifile import CziFile
 import tifffile
 from typing import Optional, Dict, Any, Tuple, Union, List
-from .config import VesselTracerConfig
+from .config import VesselTracerConfig, DEFAULT_DIVING_COLOR
 
 @dataclass
 class ImageModel:
@@ -260,6 +260,8 @@ class ImageModel:
     def get_path_coordinates(self, 
                      region_colorcode: bool = False,
                      region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None,
+                     region_color_map: Optional[Dict[str, str]] = None,
+                     diving_color: str = DEFAULT_DIVING_COLOR,
                      x_range: Optional[Tuple[float, float]] = None,
                      y_range: Optional[Tuple[float, float]] = None,
                      z_range: Optional[Tuple[float, float]] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -268,6 +270,8 @@ class ImageModel:
         Args:
             region_colorcode: If True, color-code paths based on their region
             region_bounds: Optional dictionary of region boundaries for color coding
+            region_color_map: Optional mapping from region name to color
+            diving_color: Color used when path spans multiple regions
             x_range: Optional tuple of (min_x, max_x) to filter paths
             y_range: Optional tuple of (min_y, max_y) to filter paths
             z_range: Optional tuple of (min_z, max_z) to filter paths
@@ -286,12 +290,8 @@ class ImageModel:
             raise ValueError("No paths found. Run trace_paths() first.")
             
         # Define colors for regions
-        region_colors = {
-            'superficial': 'tab:purple',
-            'intermediate': 'tab:red',
-            'deep': 'tab:blue',
-            'diving': 'magenta'
-        }
+        region_colors = region_color_map or {}
+        multi_region_color = diving_color or DEFAULT_DIVING_COLOR
         
         # Initialize lists to store coordinates and colors
         all_x_paths = []
@@ -327,11 +327,11 @@ class ImageModel:
                     
                     if len(unique_regions) > 1 or unique_regions[0] == 'Outside':
                         # Plot as diving vessel if path crosses multiple regions
-                        all_colors_paths.append(region_colors['diving'])
+                        all_colors_paths.append(multi_region_color)
                     else:
                         # Plot in the color of its single region
                         region = unique_regions[0]
-                        all_colors_paths.append(region_colors[region])
+                        all_colors_paths.append(region_colors.get(region, multi_region_color))
                 else:
                     all_colors_paths.append('red')
                 

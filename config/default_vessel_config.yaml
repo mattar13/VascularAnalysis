@@ -38,9 +38,15 @@ region:
   subroi_segmenting_size: 500
 
 regions:
- - superficial
- - intermediate
- - deep
+  names:
+    - superficial
+    - intermediate
+    - deep
+  colors:
+    - orange
+    - green
+    - cyan
+  diving_color: cyan
 
 # Path smoothing settings (to reduce jitter in vessel traces)
 smoothing:

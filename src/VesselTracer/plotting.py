@@ -4,6 +4,16 @@ from typing import Dict, Any, Optional, Tuple, List
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import splprep, splev
+from .config import DEFAULT_DIVING_COLOR, DEFAULT_REGIONS, DEFAULT_REGION_COLORS
+
+
+def _extract_region_color_settings(controller) -> Tuple[Dict[str, str], str]:
+    """Return configured region colors and diving color with sensible defaults."""
+    config = getattr(controller, 'config', None)
+    if config is not None and hasattr(config, 'get_region_color_map'):
+        return config.get_region_color_map(), getattr(config, 'diving_color', DEFAULT_DIVING_COLOR)
+    fallback_colors = {region: color for region, color in zip(DEFAULT_REGIONS, DEFAULT_REGION_COLORS)}
+    return fallback_colors, DEFAULT_DIVING_COLOR
 
 def show_max_projection(vol: np.ndarray, ax: Optional[plt.Axes] = None) -> None:
     """Show maximum intensity projection of a volume.
@@ -108,9 +118,9 @@ def plot_projections_on_axis(ax, controller, projection: str = 'x', mode: str = 
                                 fill=False, color='red', linewidth=2)
             ax.add_patch(rect)
         elif projection == 'y':
-            ax.vlines([min_x, min_x + pixel_roi], xmin = 0, xmax = _proj.shape[0], color='red', linewidth=2)
+            ax.vlines([min_x, min_x + pixel_roi], ymin = 0, ymax = _proj.shape[0], color='red', linewidth=2)
         elif projection == 'x':
-            ax.hlines([min_y, min_y + pixel_roi], ymin = 0, ymax = _proj.shape[1], color='red', linewidth=2)
+            ax.hlines([min_y, min_y + pixel_roi], xmin = 0, xmax = _proj.shape[1], color='red', linewidth=2)
 
 def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source: str = 'roi', depth_coded: bool = False, show_roi_box: bool = False, full_view: bool = True) -> Tuple[plt.Figure, Dict[str, plt.Axes]]:
     """Create a comprehensive plot showing different projections and intensity profile.
@@ -197,16 +207,19 @@ def plot_paths_on_axis(ax, controller,
     if controller.roi_model.paths is None:
         raise ValueError("No paths found. Run trace_paths() first.")
     
-    # Get projected coordinates and colors
+    # Determine configured colors
+    region_color_map, diving_color = _extract_region_color_settings(controller)
+
+    get_paths_kwargs = {
+        'region_colorcode': region_colorcode,
+        'region_color_map': region_color_map,
+        'diving_color': diving_color
+    }
     if region_colorcode:
-        x_paths, y_paths, z_paths, colors = controller.roi_model.get_path_coordinates(
-            region_colorcode=region_colorcode,
-            region_bounds=controller.roi_model.region_bounds
-        )
-    else:
-        x_paths, y_paths, z_paths, colors = controller.roi_model.get_path_coordinates(
-            region_colorcode=region_colorcode
-        )
+        get_paths_kwargs['region_bounds'] = controller.roi_model.region_bounds
+
+    # Get projected coordinates and colors
+    x_paths, y_paths, z_paths, colors = controller.roi_model.get_path_coordinates(**get_paths_kwargs)
     
     for i in range(len(x_paths)):
         if projection == 'xyz':
@@ -263,17 +276,16 @@ def plot_paths(controller, figsize=(15, 7), region_colorcode: bool = False, proj
     # ax_2d_zy.set_aspect('equal')
     
     # Add legend if using region colorcoding
-    if region_colorcode and hasattr(controller, 'region_bounds'):
-        region_colors = {
-            'superficial': 'tab:purple',
-            'intermediate': 'tab:red',
-            'deep': 'tab:blue',
-            'diving': 'magenta'
-        }
-        handles = [plt.Line2D([0], [0], color=color, label=region) 
-                  for region, color in region_colors.items()]
+    if region_colorcode:
+        region_color_map, diving_color = _extract_region_color_settings(controller)
+        legend_regions = controller.config.regions if hasattr(controller, 'config') else list(region_color_map.keys())
+        handles = [
+            plt.Line2D([0], [0], color=region_color_map.get(region, 'k'), label=region)
+            for region in legend_regions if region in region_color_map
+        ]
+        handles.append(plt.Line2D([0], [0], color=diving_color, label='diving'))
         fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.02),
-                  ncol=4, title='Regions')
+                  ncol=max(len(handles), 1), title='Regions')
     
     plt.tight_layout()
     return fig, {'2d_xy': ax_2d_xy, '2d_xz': ax_2d_xz, '2d_zy': ax_2d_zy, '3d': ax_3d}
@@ -365,18 +377,18 @@ def plot_regions(controller, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.
     #ax1.plot(min_zprofile, z_positions, color='gray', linestyle=':', label='Min')
     #ax1.plot(max_zprofile, z_positions, color='gray', linestyle=':', label='Max')
     
-    # Define colors for layers
-    layer_colors = ['tab:purple', 'tab:red', 'tab:blue']
-    
+    region_color_map, _ = _extract_region_color_settings(controller)
+
     # Plot regions
-    for i, (region, (peak, sigma, bounds)) in enumerate(controller.roi_model.region_bounds.items()):
+    for region, (peak, sigma, bounds) in data_object.region_bounds.items():
         # Add horizontal lines at peaks
         ax0.axhline(peak, color='red', linestyle='--', alpha=0.5)
         ax1.axhline(peak, color='red', linestyle='--', alpha=0.5)
+        span_color = region_color_map.get(region, 'gray')
         
         # Add spans for regions
-        ax0.axhspan(bounds[0], bounds[1], color=layer_colors[i], alpha=0.25, label=region)
-        ax1.axhspan(bounds[0], bounds[1], color=layer_colors[i], alpha=0.5, label=region)
+        ax0.axhspan(bounds[0], bounds[1], color=span_color, alpha=0.25, label=region)
+        ax1.axhspan(bounds[0], bounds[1], color=span_color, alpha=0.5, label=region)
     
     # Customize ax1 (z-profile)
     ax1.invert_yaxis()
@@ -418,25 +430,21 @@ def plot_region_projections(controller, figsize=(15, 5)) -> Tuple[plt.Figure, Di
     # Create figure with three subplots
     fig, axes = plt.subplots(1, 3, figsize=figsize)
     
-    # Define colors for each region
-    region_colors = {
-        'superficial': 'tab:purple',
-        'intermediate': 'tab:red',
-        'deep': 'tab:blue'
-    }
+    region_color_map, _ = _extract_region_color_settings(controller)
     
     # Plot each region projection
     for i, (region_name, ax) in enumerate(zip(['superficial', 'intermediate', 'deep'], axes)):
         projection = controller.roi_model.region_projections[region_name]
+        color = region_color_map.get(region_name, 'white')
         
         # Plot projection
         im = ax.imshow(projection, cmap='gray')
-        ax.set_title(f'{region_name.capitalize()} Layer')
+        ax.set_title(f'{region_name.capitalize()} Layer', color=color)
         
         # Add scale bar
         scalebar_length_pixels = int(50 / controller.image_model.pixel_size_x)  # 50 micron scale bar
         ax.plot([20, 20 + scalebar_length_pixels], [projection.shape[0] - 20] * 2, 
-                'w-', linewidth=2)
+                color=color, linewidth=2)
         
         # Add colorbar
         plt.colorbar(im, ax=ax, label='Binary Value')
@@ -549,9 +557,12 @@ def plot_vessel_paths_3d(controller,
         raise ValueError("No paths found. Run trace_paths() first.")
     
     # Get path coordinates
+    region_color_map, diving_color = _extract_region_color_settings(controller)
     x_paths, y_paths, z_paths, colors = model.get_path_coordinates(
         region_colorcode=region_colorcode,
-        region_bounds=model.region_bounds if region_colorcode else None
+        region_bounds=model.region_bounds if region_colorcode else None,
+        region_color_map=region_color_map,
+        diving_color=diving_color
     )
     
     # Create 3D figure
@@ -592,12 +603,13 @@ def plot_vessel_paths_3d(controller,
     # Add legend if region color-coded
     if region_colorcode:
         from matplotlib.patches import Patch
+        region_color_map, diving_color = _extract_region_color_settings(controller)
+        legend_regions = controller.config.regions if hasattr(controller, 'config') else list(region_color_map.keys())
         legend_elements = [
-            Patch(facecolor='tab:purple', alpha=alpha, label='Superficial'),
-            Patch(facecolor='tab:red', alpha=alpha, label='Intermediate'),
-            Patch(facecolor='tab:blue', alpha=alpha, label='Deep'),
-            Patch(facecolor='magenta', alpha=alpha, label='Diving')
+            Patch(facecolor=region_color_map.get(region, 'gray'), alpha=alpha, label=region.capitalize())
+            for region in legend_regions if region in region_color_map
         ]
+        legend_elements.append(Patch(facecolor=diving_color, alpha=alpha, label='Diving'))
         ax.legend(handles=legend_elements, loc='upper left', framealpha=0.8)
     
     plt.tight_layout()
