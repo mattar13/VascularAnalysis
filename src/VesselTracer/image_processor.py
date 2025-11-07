@@ -3,7 +3,7 @@ import numpy as np
 import time
 from scipy.ndimage import gaussian_filter, median_filter
 from skimage.morphology import remove_small_objects, binary_closing, binary_opening, ball
-from skimage.filters import threshold_otsu, threshold_triangle
+from skimage.filters import threshold_otsu, threshold_triangle, threshold_sauvola, sato
 import concurrent.futures
 from scipy.signal import find_peaks, peak_widths
 from tqdm import tqdm
@@ -297,7 +297,9 @@ class ImageProcessor:
         
         return background_slice
 
-    def estimate_background(self, image_like: Union[ImageModel, ROI]) -> np.ndarray:
+    def estimate_background(self,
+                            image_like: Union[ImageModel, ROI],
+                            mode: str = "rolling_ball") -> np.ndarray:
         """Apply median filter for background subtraction using multithreading.
         
         Creates a background image using median filtering. This technique is commonly 
@@ -310,72 +312,70 @@ class ImageProcessor:
             np.ndarray: Estimated background volume
         """
         start_time = time.time()
-        self._log("Estimating background using median filter...", level=1)
+        mode = (mode or "rolling_ball").lower()
         
         if image_like.volume is None:
-            raise ValueError("No volume data available for median filtering")
-            
-        # Get pixel conversions
-        pixel_conversions = self._get_pixel_conversions(image_like)
-        median_filter_size = pixel_conversions['median_filter_size']
+            raise ValueError("No volume data available for background estimation")
         
-        self._log(f"Median filter size: {median_filter_size} pixels", level=2)
-        
-        if self.use_gpu and GPU_AVAILABLE:
-            self._log("Using GPU acceleration for median filtering", level=2)
-            # Convert to GPU array
-            gpu_volume = cp.asarray(image_like.volume)
+        if mode in ("rolling_ball", "median"):
+            self._log("Estimating background using median filter...", level=1)
+            pixel_conversions = self._get_pixel_conversions(image_like)
+            median_filter_size = pixel_conversions['median_filter_size']
+            self._log(f"Median filter size: {median_filter_size} pixels", level=2)
             
-            # Create background image using median filter
-            gpu_background = cp_ndimage.median_filter(gpu_volume, size=median_filter_size)
-            
-            # Convert back to CPU
-            background_image = cp.asnumpy(gpu_background)
-        else:
-            self._log("Using CPU multithreading for median filtering", level=1)
-            
-            # Get number of z-slices
-            n_slices = image_like.volume.shape[0]
-            
-            # Create empty array for background
-            background_image = np.zeros_like(image_like.volume)
-            
-            # Get max_workers from config
-            max_workers = self.config.max_workers
-            
-            # Get number of available CPU cores
-            cpu_count = multiprocessing.cpu_count()
-            self._log(f"Available CPU cores: {cpu_count}", level=2)
-            
-            # Process slices in parallel with progress bar
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # Log number of workers being used
-                if max_workers is None:
-                    self._log(f"Using default number of worker threads ({cpu_count})", level=2)
-                else:
-                    self._log(f"Using {max_workers} worker threads (out of {cpu_count} available cores)", level=2)
+            if self.use_gpu and GPU_AVAILABLE:
+                self._log("Using GPU acceleration for median filtering", level=2)
+                gpu_volume = cp.asarray(image_like.volume)
+                gpu_background = cp_ndimage.median_filter(gpu_volume, size=median_filter_size)
+                background_image = cp.asnumpy(gpu_background)
+            else:
+                self._log("Using CPU multithreading for median filtering", level=1)
+                n_slices = image_like.volume.shape[0]
+                background_image = np.zeros_like(image_like.volume)
+                max_workers = self.config.max_workers
+                cpu_count = multiprocessing.cpu_count()
+                self._log(f"Available CPU cores: {cpu_count}", level=2)
                 
-                # Submit all z-slices for processing
-                future_to_slice = {
-                    executor.submit(self._process_z_slice, image_like.volume[z], median_filter_size): z 
-                    for z in range(n_slices)
-                }
-                
-                # Process results as they complete with progress bar
-                with tqdm(total=n_slices, desc="Processing slices", unit="slice") as pbar:
-                    for future in concurrent.futures.as_completed(future_to_slice):
-                        z = future_to_slice[future]
-                        try:
-                            background_slice = future.result()
-                            background_image[z] = background_slice
-                            pbar.update(1)
-                        except Exception as e:
-                            self._log(f"Error processing slice {z}: {str(e)}", level=1)
-        
-        self._log("Background estimation complete", level=1, timing=time.time() - start_time)
-        self._log(f"Background volume range: [{background_image.min():.3f}, {background_image.max():.3f}]", level=2)
-        
-        return background_image
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    if max_workers is None:
+                        self._log(f"Using default number of worker threads ({cpu_count})", level=2)
+                    else:
+                        self._log(f"Using {max_workers} worker threads (out of {cpu_count} available cores)", level=2)
+                    
+                    future_to_slice = {
+                        executor.submit(self._process_z_slice, image_like.volume[z], median_filter_size): z 
+                        for z in range(n_slices)
+                    }
+                    
+                    with tqdm(total=n_slices, desc="Processing slices", unit="slice") as pbar:
+                        for future in concurrent.futures.as_completed(future_to_slice):
+                            z = future_to_slice[future]
+                            try:
+                                background_slice = future.result()
+                                background_image[z] = background_slice
+                                pbar.update(1)
+                            except Exception as exc:
+                                self._log(f"Error processing slice {z}: {exc}", level=1)
+            
+            self._log("Background estimation complete", level=1, timing=time.time() - start_time)
+            self._log(f"Background volume range: [{background_image.min():.3f}, {background_image.max():.3f}]", level=2)
+            return background_image
+
+        if mode == "polyfit":
+            self._log("Estimating background using z-profile polyfit...", level=1)
+            z_profile = np.mean(image_like.volume, axis=(1, 2))
+            z_coords = np.arange(len(z_profile))
+            degree = 2 if len(z_coords) > 2 else 1
+            coeffs = np.polyfit(z_coords, z_profile, deg=degree)
+            trend = np.polyval(coeffs, z_coords)
+            background = np.broadcast_to(trend[:, None, None], image_like.volume.shape).astype(np.float32)
+            self._log("Polyfit background estimation complete", level=1, timing=time.time() - start_time)
+            return background
+
+        if mode == "none":
+            return np.zeros_like(image_like.volume)
+
+        raise ValueError(f"Unknown background mode: {mode}")
 
     def detrend_volume(self, image_like: Union[ImageModel, ROI]) -> np.ndarray:
         """Remove linear trend from volume along z-axis.
@@ -492,31 +492,33 @@ class ImageProcessor:
         pixel_conversions = self._get_pixel_conversions(image_like)
         close_radius = pixel_conversions['close_radius']
         
-        # Calculate threshold using entire volume
-        if method.lower() == 'triangle':
-            thresh = threshold_triangle(image_like.volume.ravel())
-        elif method.lower() == 'otsu':
-            thresh = threshold_otsu(image_like.volume.ravel())
+        method_name = method.lower()
+        if method_name in ('triangle', 'otsu'):
+            if method_name == 'triangle':
+                thresh = threshold_triangle(image_like.volume.ravel())
+            else:
+                thresh = threshold_otsu(image_like.volume.ravel())
+            self._log(f"{method_name} threshold: {thresh:.3f}", level=2)
+            
+            if self.use_gpu and GPU_AVAILABLE:
+                self._log("Using GPU acceleration for binarization", level=2)
+                gpu_volume = cp.asarray(image_like.volume)
+                bw_vol = cp.asnumpy(gpu_volume > thresh)
+            else:
+                bw_vol = image_like.volume > thresh
+        elif method_name in ('sauvola', 'phansalkar'):
+            window_size = max(3, pixel_conversions['median_filter_size'])
+            if window_size % 2 == 0:
+                window_size += 1
+            self._log(f"Applying {method_name} threshold slice-wise (window={window_size})", level=2)
+            bw_vol = np.zeros_like(image_like.volume, dtype=bool)
+            for z in range(image_like.volume.shape[0]):
+                slice_img = image_like.volume[z]
+                thresh_slice = threshold_sauvola(slice_img, window_size=window_size)
+                bw_vol[z] = slice_img > thresh_slice
         else:
             raise ValueError(f"Unknown binarization method: {method}")
-            
-        self._log(f"{method} threshold: {thresh:.3f}", level=2)
         
-        if self.use_gpu and GPU_AVAILABLE:
-            self._log("Using GPU acceleration for binarization", level=2)
-            # Convert to GPU array
-            gpu_volume = cp.asarray(image_like.volume)
-            
-            # Apply threshold on GPU
-            bw_vol = gpu_volume > thresh
-            
-            # Convert back to CPU for morphological operations
-            bw_vol = cp.asnumpy(bw_vol)
-        else:
-            # Apply threshold to entire volume at once
-            bw_vol = image_like.volume > thresh
-        
-        # Remove small objects in 3D
         bw_vol = remove_small_objects(bw_vol, min_size=self.config.min_object_size)
 
         self._log("Binarization complete", level=1, timing=time.time() - start_time)
@@ -567,13 +569,15 @@ class ImageProcessor:
         Returns:
             np.ndarray: Binary volume after closing
         """
-        close_radius = self.config.close_radius
         start_time = time.time()
         self._log("Applying morphological closing...", level=1)
         
         if image_like.binary is None:
             raise ValueError("No binary volume available for morphological closing")
-            
+        
+        if radius is None:
+            radius = self.config.close_radius
+        close_radius = max(1, int(round(radius)))
         self._log(f"Closing radius: {close_radius} pixels", level=2)
         
         # Apply closing
@@ -941,3 +945,160 @@ class ImageProcessor:
         
         self._log("Region projections complete", level=1, timing=time.time() - start_time)
         return region_projections
+
+    def generate_tiles(self,
+                       volume: np.ndarray,
+                       tile_xy: int,
+                       overlap: int,
+                       halo_xy: int) -> List[Dict[str, Any]]:
+        """Generate tile descriptors with halo padding for XY tiling."""
+        if volume.ndim != 3:
+            raise ValueError("Expected a 3D volume for tiling")
+
+        _, height, width = volume.shape
+        stride = max(1, tile_xy - overlap)
+        tiles: List[Dict[str, Any]] = []
+        tile_id = 0
+
+        for y in range(0, height, stride):
+            core_y0 = y
+            core_y1 = min(y + tile_xy, height)
+            halo_y0 = max(0, core_y0 - halo_xy)
+            halo_y1 = min(height, core_y1 + halo_xy)
+
+            for x in range(0, width, stride):
+                core_x0 = x
+                core_x1 = min(x + tile_xy, width)
+                halo_x0 = max(0, core_x0 - halo_xy)
+                halo_x1 = min(width, core_x1 + halo_xy)
+
+                tiles.append({
+                    'id': tile_id,
+                    'full_slices': (slice(None), slice(halo_y0, halo_y1), slice(halo_x0, halo_x1)),
+                    'core_slices': (slice(None), slice(core_y0, core_y1), slice(core_x0, core_x1)),
+                    'local_core_slices': (
+                        slice(None),
+                        slice(core_y0 - halo_y0, core_y1 - halo_y0),
+                        slice(core_x0 - halo_x0, core_x1 - halo_x0),
+                    ),
+                    'core_bounds': ((core_y0, core_y1), (core_x0, core_x1))
+                })
+                tile_id += 1
+
+        self._log(f"Generated {len(tiles)} tiles (tile_xy={tile_xy}, overlap={overlap}, halo={halo_xy})", level=2)
+        return tiles
+
+    def stitch_tiles(self,
+                     tile_results: List[Dict[str, Any]],
+                     volume_shape: Tuple[int, int, int],
+                     blend_mode: str = "vesselness_max") -> Dict[str, np.ndarray]:
+        """Blend per-tile outputs back into a full-stack representation."""
+        if not tile_results:
+            raise ValueError("No tiles to stitch")
+
+        binary_votes = np.zeros(volume_shape, dtype=np.uint16)
+        cover_counts = np.zeros(volume_shape, dtype=np.uint16)
+        vesselness = np.zeros(volume_shape, dtype=np.float32)
+        radius = np.zeros(volume_shape, dtype=np.float32)
+
+        for result in tile_results:
+            core_slice = result['core_slices']
+            local_slice = result['local_core_slices']
+
+            binary_tile = result.get('binary')
+            if binary_tile is not None:
+                binary_votes[core_slice] += binary_tile[local_slice].astype(np.uint8)
+                cover_counts[core_slice] += 1
+
+            vessel_tile = result.get('vesselness')
+            if vessel_tile is not None:
+                current = vesselness[core_slice]
+                tile_view = vessel_tile[local_slice]
+                vesselness[core_slice] = np.maximum(current, tile_view)
+
+            radius_tile = result.get('radius')
+            if radius_tile is not None and vessel_tile is not None:
+                tile_weights = vessel_tile[local_slice]
+                update_mask = tile_weights > 0
+                radius_view = radius[core_slice]
+                radius_tile_view = radius_tile[local_slice]
+                radius_slice = np.where(update_mask, radius_tile_view, radius_view)
+                radius[core_slice] = radius_slice
+
+        if blend_mode == "majority":
+            threshold = cover_counts / 2
+            stitched_binary = binary_votes > threshold
+        else:
+            stitched_binary = binary_votes > 0
+            if blend_mode == "or_then_clean":
+                stitched_binary = remove_small_objects(
+                    stitched_binary,
+                    min_size=self.config.min_object_size
+                )
+
+        return {
+            'binary': stitched_binary,
+            'vesselness': vesselness,
+            'radius': radius,
+            'coverage': cover_counts
+        }
+
+    def multiscale_vesselness(self,
+                              volume: np.ndarray,
+                              pixel_sizes: Tuple[float, float, float],
+                              scales: Tuple[float, ...],
+                              anisotropic_z: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+        """Compute packet of vesselness responses and associated best-scale map."""
+        if volume.ndim != 3:
+            raise ValueError("Volume must be 3D for vesselness computation")
+
+        spacing = None
+        if anisotropic_z and pixel_sizes:
+            spacing = (pixel_sizes[0], pixel_sizes[1], pixel_sizes[2])
+
+        responses = []
+        for sigma in scales:
+            sigma = max(float(sigma), 0.5)
+            response = sato(
+                volume,
+                sigmas=[sigma],
+                spacing=spacing,
+                mode='reflect',
+                black_ridges=False
+            )
+            responses.append(response.astype(np.float32))
+
+        stacked = np.stack(responses, axis=0)
+        best_idx = np.argmax(stacked, axis=0).astype(np.uint8)
+        vesselness = stacked.max(axis=0)
+
+        vmin = vesselness.min()
+        vmax = vesselness.max()
+        if vmax > vmin:
+            vesselness = (vesselness - vmin) / (vmax - vmin)
+
+        radii = np.array(scales, dtype=np.float32)
+        radius = radii[best_idx]
+
+        return vesselness.astype(np.float32), radius.astype(np.float32)
+
+    def adaptive_geodesic_closing(self,
+                                  binary_volume: np.ndarray,
+                                  radius_estimate: np.ndarray,
+                                  rmin: int,
+                                  rmax: int) -> np.ndarray:
+        """Perform radius-aware morphological closing."""
+        if binary_volume.shape != radius_estimate.shape:
+            raise ValueError("radius_estimate must match binary volume shape")
+
+        radius_map = np.clip(np.rint(radius_estimate).astype(int), rmin, rmax)
+        closed = np.zeros_like(binary_volume, dtype=bool)
+
+        for radius in range(rmin, rmax + 1):
+            mask = radius_map == radius
+            if not np.any(mask):
+                continue
+            local_closed = binary_closing(binary_volume, ball(max(1, radius)))
+            closed[mask] = local_closed[mask]
+
+        return closed

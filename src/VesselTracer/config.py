@@ -1,11 +1,159 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field, asdict, replace
 from pathlib import Path
 from typing import Optional, List, Union, Tuple, Dict, Any
+import hashlib
+import json
 import yaml
 
 DEFAULT_REGIONS = ['superficial', 'intermediate', 'deep']
 DEFAULT_REGION_COLORS = ['orange', 'green', 'cyan']
 DEFAULT_DIVING_COLOR = 'cyan'
+
+
+@dataclass(frozen=True)
+class TileConfig:
+    """Configuration for tiled processing."""
+
+    use_tiled_pipeline: bool = True
+    tile_xy: int = 384
+    tile_overlap: int = 64
+    halo_xy: int = 16
+    vessel_scales: Tuple[float, ...] = (1.0, 1.6, 2.3, 3.2, 4.5)
+    anisotropic_z: bool = True
+    adaptive_closing: bool = True
+    closing_rmin: int = 1
+    closing_rmax: int = 5
+    layer_aware: bool = True
+    thresh_mode: str = "sauvola"
+    blend_mode: str = "vesselness_max"
+    parallel_backend: str = "dask"
+    max_workers: int = 0
+    cache_intermediates: bool = False
+
+
+@dataclass(frozen=True)
+class StackConfig:
+    """Per-stack processing configuration."""
+
+    remove_dead_frames: bool = True
+    dead_frame_threshold: float = 3.0
+    normalize: bool = True
+    detrend: bool = True
+    background_mode: str = "polyfit"  # polyfit, rolling_ball, none
+    smoothing: Optional[str] = "gaussian"  # gaussian, anidiff, None
+
+    skip_binarization: bool = False
+    skip_closing: bool = False
+    skip_regions: bool = False
+    skip_trace: bool = False
+
+    tiling: TileConfig = field(default_factory=TileConfig)
+
+    seed: int = 12345
+    notes: Dict[str, Any] = field(default_factory=dict)
+
+
+def _coerce_tuple(value: Union[List[float], Tuple[float, ...]]) -> Tuple[float, ...]:
+    if value is None:
+        return tuple()
+    return tuple(value)
+
+
+def _build_tile_config(data: Optional[Dict[str, Any]]) -> TileConfig:
+    data = data or {}
+    vessel_scales = data.get('vessel_scales')
+    if vessel_scales is not None:
+        data = {**data, 'vessel_scales': _coerce_tuple(vessel_scales)}
+    return TileConfig(
+        use_tiled_pipeline=data.get('use_tiled_pipeline', TileConfig.use_tiled_pipeline),
+        tile_xy=data.get('tile_xy', TileConfig.tile_xy),
+        tile_overlap=data.get('tile_overlap', TileConfig.tile_overlap),
+        halo_xy=data.get('halo_xy', TileConfig.halo_xy),
+        vessel_scales=data.get('vessel_scales', TileConfig.vessel_scales),
+        anisotropic_z=data.get('anisotropic_z', TileConfig.anisotropic_z),
+        adaptive_closing=data.get('adaptive_closing', TileConfig.adaptive_closing),
+        closing_rmin=data.get('closing_rmin', TileConfig.closing_rmin),
+        closing_rmax=data.get('closing_rmax', TileConfig.closing_rmax),
+        layer_aware=data.get('layer_aware', TileConfig.layer_aware),
+        thresh_mode=data.get('thresh_mode', TileConfig.thresh_mode),
+        blend_mode=data.get('blend_mode', TileConfig.blend_mode),
+        parallel_backend=data.get('parallel_backend', TileConfig.parallel_backend),
+        max_workers=data.get('max_workers', TileConfig.max_workers),
+        cache_intermediates=data.get('cache_intermediates', TileConfig.cache_intermediates),
+    )
+
+
+def load_stack_config(config_path: Optional[Union[str, Path]] = None) -> StackConfig:
+    """Load StackConfig + TileConfig from YAML."""
+    if config_path is None:
+        config_path = Path(__file__).parent.parent.parent / 'config' / 'default_vessel_config.yaml'
+    config_path = Path(config_path)
+    with open(config_path, 'r') as stream:
+        config = yaml.safe_load(stream)
+
+    stack_section = config.get('stack', {}) or {}
+    tiling_section = config.get('tiling', stack_section.get('tiling', {}))
+
+    tiling_cfg = _build_tile_config(tiling_section)
+
+    return StackConfig(
+        remove_dead_frames=stack_section.get('remove_dead_frames', True),
+        dead_frame_threshold=stack_section.get('dead_frame_threshold', 3.0),
+        normalize=stack_section.get('normalize', True),
+        detrend=stack_section.get('detrend', True),
+        background_mode=stack_section.get('background_mode', "polyfit"),
+        smoothing=stack_section.get('smoothing', "gaussian"),
+        skip_binarization=stack_section.get('skip_binarization', False),
+        skip_closing=stack_section.get('skip_closing', False),
+        skip_regions=stack_section.get('skip_regions', False),
+        skip_trace=stack_section.get('skip_trace', False),
+        tiling=tiling_cfg,
+        seed=stack_section.get('seed', 12345),
+        notes=stack_section.get('notes', {}),
+    )
+
+
+def save_stack_config(cfg: StackConfig, path: Union[str, Path]) -> None:
+    """Persist stack configuration as JSON."""
+    payload = asdict(cfg)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, 'w') as fh:
+        json.dump(payload, fh, indent=2, sort_keys=True)
+
+
+def config_fingerprint(cfg: StackConfig) -> str:
+    """Return SHA1 fingerprint for a stack configuration."""
+    blob = json.dumps(asdict(cfg), sort_keys=True).encode('utf-8')
+    return hashlib.sha1(blob).hexdigest()
+
+
+def apply_stack_overrides(base: StackConfig, overrides: Optional[Dict[str, Any]]) -> StackConfig:
+    """Return a new StackConfig with dict overrides applied."""
+    if not overrides:
+        return base
+
+    overrides = dict(overrides)
+    tiling_overrides = overrides.pop('tiling', None)
+
+    notes_override = overrides.pop('notes', None)
+    if notes_override:
+        overrides['notes'] = {**base.notes, **notes_override}
+
+    valid_keys = {f for f in StackConfig.__dataclass_fields__.keys() if f != 'tiling'}
+    filtered = {k: v for k, v in overrides.items() if k in valid_keys}
+    updated = replace(base, **filtered) if filtered else base
+
+    if tiling_overrides:
+        if 'vessel_scales' in tiling_overrides:
+            tiling_overrides = {
+                **tiling_overrides,
+                'vessel_scales': _coerce_tuple(tiling_overrides['vessel_scales'])
+            }
+        updated_tiling = replace(updated.tiling, **tiling_overrides)
+        updated = replace(updated, tiling=updated_tiling)
+
+    return updated
 
 
 @dataclass

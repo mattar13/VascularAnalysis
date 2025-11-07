@@ -5,7 +5,7 @@ import xmltodict
 from czifile import CziFile
 import tifffile
 from typing import Optional, Dict, Any, Tuple, Union, List
-from .config import VesselTracerConfig, DEFAULT_DIVING_COLOR
+from .config import VesselTracerConfig, DEFAULT_DIVING_COLOR, StackConfig
 
 @dataclass
 class ImageModel:
@@ -19,6 +19,11 @@ class ImageModel:
     filepath: Optional[Union[str, Path]] = None
     pixel_sizes: Tuple[float, float, float] = (1.0, 1.0, 1.0)
     region_bounds: Optional[Dict[str, Tuple[float, float, Tuple[float, float]]]] = None
+    vesselness: Optional[np.ndarray] = None
+    radius: Optional[np.ndarray] = None
+    region_projections: Optional[Dict[str, np.ndarray]] = None
+    stack_config: Optional[StackConfig] = None
+    stack_config_fingerprint: Optional[str] = None
     
     # Image properties
     pixel_size_x: float = 1.0

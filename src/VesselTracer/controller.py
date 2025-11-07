@@ -9,8 +9,15 @@ from typing import Optional, Dict, Any, Tuple, Union, List
 # Import the components that the Controller will coordinate
 from .image_processor import ImageProcessor
 from .vessel_tracer import VesselTracer
-from .config import VesselTracerConfig
+from .config import (
+    VesselTracerConfig,
+    StackConfig,
+    load_stack_config,
+    config_fingerprint,
+    apply_stack_overrides,
+)
 from .image_model import ImageModel, ROI
+from .logging_utils import Log, resolve_log_level
 
 class VesselAnalysisController:
     """Controller class that orchestrates the complete vessel analysis pipeline.
@@ -23,9 +30,11 @@ class VesselAnalysisController:
     
     def __init__(self, 
                  input_path: Union[str, Path],
-                 config_path: Union[str, Path],
+                 config_path: Optional[Union[str, Path]],
                  verbose: int = 2,
-                 use_gpu: bool = False):
+                 use_gpu: bool = False,
+                 stack_config: Optional[StackConfig] = None,
+                 stack_overrides: Optional[Dict[str, Any]] = None):
         """Initialize the controller.
         
         Args:
@@ -36,13 +45,25 @@ class VesselAnalysisController:
         """
         self.verbose = verbose
         self.use_gpu = use_gpu
+        self.input_data = None
         
         # Load configuration
         self.config = VesselTracerConfig(config_path)
+        self.stack_config = stack_config or load_stack_config(config_path)
+        if stack_overrides:
+            self.stack_config = apply_stack_overrides(self.stack_config, stack_overrides)
+        self.active_stack_config = self.stack_config
+        self.stack_fingerprint = config_fingerprint(self.stack_config)
         
         # Initialize image model
         self.image_model = ImageModel(filepath=input_path)
+        self.image_model.stack_config = self.stack_config
+        self.image_model.stack_config_fingerprint = self.stack_fingerprint
         self.roi_model = None  # Will be initialized during analysis
+
+        # Logger
+        log_level = resolve_log_level(self.config.verbose, self.stack_config.notes)
+        self.logger = Log(enabled=True, level=log_level)
         
         # Initialize components
         self.processor = ImageProcessor(
@@ -57,18 +78,196 @@ class VesselAnalysisController:
         )
         
     def _log(self, message: str, level: int = 1, timing: Optional[float] = None):
-        """Log a message with appropriate verbosity level.
-        
-        Args:
-            message: Message to log
-            level: Minimum verbosity level required to show message (1-3)
-            timing: Optional timing information to include
-        """
-        if self.config.verbose >= level:
-            if timing is not None and self.config.verbose >= 3:
-                print(f"{message} (took {timing:.2f}s)")
-            else:
-                print(message)
+        """Log a message with appropriate verbosity level."""
+        if timing is not None:
+            message = f"{message} (took {timing:.2f}s)"
+        if hasattr(self, 'logger') and self.logger:
+            self.logger(message, level=level)
+
+    def _resolve_flag(self, override: Optional[bool], config_value: bool) -> bool:
+        """Resolve boolean overrides against config defaults."""
+        if override is None:
+            return config_value
+        return override
+
+    def _prepare_stack_config(self,
+                              runtime_stack: Optional[StackConfig],
+                              overrides: Optional[Dict[str, Any]]) -> StackConfig:
+        """Resolve the active stack configuration for this run."""
+        cfg = runtime_stack or self.stack_config
+        cfg = apply_stack_overrides(cfg, overrides)
+        fingerprint = config_fingerprint(cfg)
+
+        self.image_model.stack_config = cfg
+        self.image_model.stack_config_fingerprint = fingerprint
+        self.stack_fingerprint = fingerprint
+        self.active_stack_config = cfg
+
+        # Refresh logger level
+        self.logger.level = resolve_log_level(self.config.verbose, cfg.notes)
+        return cfg
+
+    def _run_global_preprocessing(self,
+                                  stack_cfg: StackConfig,
+                                  remove_dead_frames: bool,
+                                  dead_frame_threshold: float,
+                                  background_mode: str) -> None:
+        """Apply normalization, detrending, dead-frame removal, and background subtraction."""
+        if stack_cfg.normalize:
+            self._log("Normalizing ROI volume...", level=1)
+            self.roi_model.volume = self.processor.normalize_image(self.roi_model)
+
+        if stack_cfg.detrend:
+            self._log("Detrending ROI volume...", level=1)
+            self.roi_model.volume = self.processor.detrend_volume(self.roi_model)
+
+        if remove_dead_frames and self.config.remove_dead_frames:
+            original_threshold = self.processor.config.dead_frame_threshold
+            self.processor.config.dead_frame_threshold = dead_frame_threshold
+            self._log("Removing dead frames...", level=1)
+            self.roi_model.volume = self.processor.remove_dead_frames(self.roi_model)
+            self.processor.config.dead_frame_threshold = original_threshold
+
+        background_mode = (background_mode or "rolling_ball").lower()
+        if background_mode != "none":
+            self._log(f"Estimating background ({background_mode})...", level=1)
+            self.roi_model.background = self.processor.estimate_background(
+                self.roi_model,
+                mode=background_mode
+            )
+            self._log("Subtracting background...", level=1)
+            self.roi_model.volume = self.roi_model.volume - self.roi_model.background
+            self._log(
+                f"Background-subtracted range: "
+                f"[{self.roi_model.volume.min():.3f}, {self.roi_model.volume.max():.3f}]",
+                level=2
+            )
+
+    def _run_monolithic_pipeline(self,
+                                 skip_binarization: bool,
+                                 skip_closing: bool,
+                                 threshold_method: str) -> None:
+        """Run the legacy single-volume binarize/closing pipeline."""
+        if skip_binarization:
+            self._log("Skipping binarization per configuration.", level=2)
+            return
+
+        self._log("Binarizing vessels...", level=1)
+        self.roi_model.binary = self.processor.binarize_volume(
+            self.roi_model,
+            method=threshold_method
+        )
+
+        if skip_closing:
+            return
+
+        self._log("Closing vessels (monolithic)...", level=1)
+        self.roi_model.binary = self.processor.morphological_closing(self.roi_model)
+
+    def _process_tile(self,
+                      tile_roi: ROI,
+                      tile_info: Dict[str, Any],
+                      stack_cfg: StackConfig,
+                      skip_binarization: bool,
+                      skip_closing: bool) -> Dict[str, Any]:
+        """Process a single tile and return intermediate products."""
+        tile_cfg = stack_cfg.tiling
+        result: Dict[str, Any] = {}
+
+        vesselness, radius = self.processor.multiscale_vesselness(
+            tile_roi.volume,
+            tile_roi.get_pixel_sizes(),
+            tile_cfg.vessel_scales,
+            anisotropic_z=tile_cfg.anisotropic_z
+        )
+        result['vesselness'] = vesselness
+        result['radius'] = radius
+
+        if skip_binarization:
+            result['binary'] = None
+        else:
+            method = tile_cfg.thresh_mode or self.config.binarization_method
+            tile_roi.volume = vesselness if method.lower() in ("sauvola", "phansalkar") else tile_roi.volume
+            tile_roi.binary = self.processor.binarize_volume(tile_roi, method=method)
+            binary_volume = tile_roi.binary
+
+            if not skip_closing:
+                if tile_cfg.adaptive_closing:
+                    binary_volume = self.processor.adaptive_geodesic_closing(
+                        binary_volume,
+                        radius,
+                        tile_cfg.closing_rmin,
+                        tile_cfg.closing_rmax
+                    )
+                else:
+                    tile_roi.binary = binary_volume
+                    binary_volume = self.processor.morphological_closing(tile_roi)
+
+            result['binary'] = binary_volume
+
+        if tile_cfg.cache_intermediates:
+            self._cache_tile_products(tile_info['id'], result)
+
+        return result
+
+    def _cache_tile_products(self, tile_id: int, data: Dict[str, Any]) -> None:
+        """Persist tile intermediates for debugging when requested."""
+        if not self.image_model.filepath:
+            return
+
+        cache_dir = Path(self.image_model.filepath).parent / "tile_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = cache_dir / f"tile_{tile_id}_{self.stack_fingerprint}.npz"
+
+        payload = {
+            key: value
+            for key, value in data.items()
+            if isinstance(value, np.ndarray) and value is not None
+        }
+        if payload:
+            np.savez_compressed(cache_path, **payload)
+
+    def _run_tiled_pipeline(self,
+                            stack_cfg: StackConfig,
+                            skip_binarization: bool,
+                            skip_closing: bool) -> Dict[str, np.ndarray]:
+        """Process the ROI volume using overlapping XY tiles."""
+        tile_cfg = stack_cfg.tiling
+        tiles = self.processor.generate_tiles(
+            self.roi_model.volume,
+            tile_xy=tile_cfg.tile_xy,
+            overlap=tile_cfg.tile_overlap,
+            halo_xy=tile_cfg.halo_xy
+        )
+
+        tile_results: List[Dict[str, Any]] = []
+        for tile in tiles:
+            tile_volume = self.roi_model.volume[tile['full_slices']].copy()
+            tile_roi = ROI(
+                volume=tile_volume,
+                pixel_size_x=self.roi_model.pixel_size_x,
+                pixel_size_y=self.roi_model.pixel_size_y,
+                pixel_size_z=self.roi_model.pixel_size_z
+            )
+            processed = self._process_tile(
+                tile_roi,
+                tile,
+                stack_cfg,
+                skip_binarization=skip_binarization,
+                skip_closing=skip_closing
+            )
+            tile_results.append({**tile, **processed})
+
+        stitched = self.processor.stitch_tiles(
+            tile_results,
+            volume_shape=self.roi_model.volume.shape,
+            blend_mode=tile_cfg.blend_mode
+        )
+
+        self.roi_model.binary = stitched['binary']
+        self.roi_model.vesselness = stitched.get('vesselness')
+        self.roi_model.radius = stitched.get('radius')
+        return stitched
                 
     def activate_gpu(self) -> bool:
         """Activate GPU mode for processing.
@@ -117,120 +316,115 @@ class VesselAnalysisController:
         self.config.save_metadata(output_path, pixel_sizes, input_type, processing_status, format)
 
     def run_analysis(self,
-                    remove_dead_frames: bool = True,
-                    dead_frame_threshold: float = 3.0,
-                    skip_smoothing: bool = False,
-                    skip_binarization: bool = False,
-                    skip_regions: bool = False, 
-                    skip_closing: bool = True,
-                    skip_trace: bool = False) -> None:
-        """Run the analysis pipeline without saving any outputs.
-        
-        This executes all analysis steps in sequence by coordinating between components:
-        1. Extract ROI
-        2. Smooth volume (optional)
-        3. Binarize vessels (optional)
-        4. Determine regions (optional)
-        5. Trace vessel paths (optional)
+                     remove_dead_frames: Optional[bool] = None,
+                     dead_frame_threshold: Optional[float] = None,
+                     skip_smoothing: Optional[bool] = None,
+                     skip_binarization: Optional[bool] = None,
+                     skip_regions: Optional[bool] = None, 
+                     skip_closing: Optional[bool] = None,
+                     skip_trace: Optional[bool] = None,
+                     stack_config: Optional[StackConfig] = None,
+                     stack_overrides: Optional[Dict[str, Any]] = None) -> None:
+        """Run the analysis pipeline for the active stack.
         
         Args:
-            remove_dead_frames: Whether to remove low-intensity frames at start/end
-            dead_frame_threshold: Number of standard deviations above minimum
-            skip_smoothing: Whether to skip the smoothing step
-            skip_binarization: Whether to skip the binarization step
-            skip_regions: Whether to skip the region detection step
-            skip_trace: Whether to skip the trace step
+            remove_dead_frames: Override whether to drop dead frames (None -> config)
+            dead_frame_threshold: Override threshold multiplier
+            skip_smoothing: Skip smoothing stage
+            skip_binarization: Skip binarization stage
+            skip_regions: Skip region detection
+            skip_closing: Skip closing/adaptive morphology
+            skip_trace: Skip path tracing
+            stack_config: Optional alternate StackConfig for this run
+            stack_overrides: Dict overrides applied to the stack config
         """
         start_time = time.time()
-        self._log("Starting analysis pipeline...", level=1)
+        stack_cfg = self._prepare_stack_config(stack_config, stack_overrides)
+
+        smoothing_disabled = (
+            stack_cfg.smoothing is None or
+            (isinstance(stack_cfg.smoothing, str) and stack_cfg.smoothing.lower() == "none")
+        )
+
+        flags = {
+            'remove_dead_frames': self._resolve_flag(remove_dead_frames, stack_cfg.remove_dead_frames),
+            'dead_frame_threshold': dead_frame_threshold if dead_frame_threshold is not None else stack_cfg.dead_frame_threshold,
+            'skip_smoothing': self._resolve_flag(skip_smoothing, smoothing_disabled),
+            'skip_binarization': self._resolve_flag(skip_binarization, stack_cfg.skip_binarization),
+            'skip_regions': self._resolve_flag(skip_regions, stack_cfg.skip_regions),
+            'skip_closing': self._resolve_flag(skip_closing, stack_cfg.skip_closing),
+            'skip_trace': self._resolve_flag(skip_trace, stack_cfg.skip_trace),
+        }
+
+        self._log(f"Starting analysis pipeline (cfg={self.stack_fingerprint[:8]})...", level=1)
         
         try:
-           
-            # 1. Extract ROI using ImageProcessor
-            self._log("1. Extracting ROI...", level=1)
-            if self.config.find_roi:
-                self.roi_model = self.processor.segment_roi(self.image_model)
-            else:
-                self._log("Using full volume as ROI", level=1)
-                self.roi_model = self.image_model
-        
-            #Normalize? 
-            self.roi_model.volume = self.processor.normalize_image(self.roi_model)
+            with self.logger.section("ROI Extraction", level=1):
+                if self.config.find_roi:
+                    self.roi_model = self.processor.segment_roi(self.image_model)
+                else:
+                    self._log("Using full volume as ROI", level=2)
+                    self.roi_model = ROI(
+                        volume=self.image_model.volume.copy(),
+                        pixel_size_x=self.image_model.pixel_size_x,
+                        pixel_size_y=self.image_model.pixel_size_y,
+                        pixel_size_z=self.image_model.pixel_size_z,
+                        min_x=0,
+                        min_y=0,
+                        max_x=self.image_model.volume.shape[2],
+                        max_y=self.image_model.volume.shape[1]
+                    )
 
-            self._log("3. Detrending...", level=1)
-            self.roi_model.volume = self.processor.detrend_volume(self.roi_model)
-            
-            print(f"\tVolume shape: {self.roi_model.volume.shape}")
-            # 2. Remove dead frames if requested
-            if self.config.remove_dead_frames:
-                self._log("2. Removing dead frames...", level=1)
-                self.roi_model.volume = self.processor.remove_dead_frames(self.roi_model)
-            print(f"\tVolume shape: {self.roi_model.volume.shape}")
-
-            # 3. Background estimation and subtraction using ImageProcessor
-            self._log("4. Background estimation...", level=1)
-            self.roi_model.background = self.processor.estimate_background(self.roi_model)
-            
-            # Perform background subtraction in controller
-            self._log("4b. Background subtraction...", level=1)
-            self.roi_model.volume = self.roi_model.volume - self.roi_model.background
-            
-            self._log(f"Background subtracted volume range: [{self.roi_model.volume.min():.3f}, {self.roi_model.volume.max():.3f}]", level=2)
-            
-            # 5. Smooth volume using ImageProcessor
-            if not skip_smoothing:
-                self._log("5. Smoothing volume...", level=1)
-                self.roi_model.volume = self.processor.smooth_volume(self.roi_model)
-            
-            # 8. Determine regions using VesselTracer
-            if not skip_regions:
-                self._log("8. Determining regions...", level=1)
-                
-                # Use ImageProcessor to determine regions
-                #self.roi_model.region_bounds = self.processor.determine_regions(self.roi_model)
-                # Use ImageProcessor to determine regions
-                self.roi_model.region_bounds = self.processor.determine_regions_with_splines(self.roi_model)
-                for region, (peak, sigma, bounds) in self.roi_model.region_bounds.items():
-                    self._log(f"\n{region}:", level=2)
-                    self._log(f"  Peak position: {peak:.1f}", level=2)
-                    self._log(f"  Width (sigma): {sigma:.1f}", level=2)
-                    self._log(f"  Bounds: {bounds[0]:.1f} - {bounds[1]:.1f}", level=2)
-                
-                # # Create region map volume using ImageProcessor
-                # self._log("8b. Creating region map...", level=1)
-                # self.roi_model.region = self.processor.create_region_map(self.roi_model, self.roi_model.region_bounds)
-            
-
-            # 6. Binarize vessels using ImageProcessor
-            if not skip_binarization:
-                self._log("6. Binarizing vessels...", level=1)
-                self.roi_model.binary = self.processor.binarize_volume(self.roi_model)
-            
-            #Lets try a 3D closing (some larger vessels are not closing properly)
-            if not skip_closing:
-                self._log("7. Closing vessels...", level=1)
-                self.roi_model.binary = self.processor.morphological_closing(self.roi_model)
-
-            # 7. Trace vessel paths using VesselTracer
-            if not skip_trace:
-                self._log("7. Tracing vessel paths...", level=1)
-
-                # VesselTracer traces and stores paths internally
-                self.roi_model.paths, self.roi_model.path_stats, self.roi_model.n_paths = self.tracer.trace_paths(
-                    binary_volume=self.roi_model.binary,
+            with self.logger.section("Global preprocessing", level=1):
+                self._run_global_preprocessing(
+                    stack_cfg,
+                    remove_dead_frames=flags['remove_dead_frames'],
+                    dead_frame_threshold=flags['dead_frame_threshold'],
+                    background_mode=stack_cfg.background_mode
                 )
-                
-                # 7b. Smooth paths to reduce jitter
-                self._log("7b. Smoothing paths...", level=1)
-                self.roi_model.paths = self.tracer.smooth_paths(self.roi_model.paths)
-                
-                try:
-                    self.roi_model.labeled_paths = self.processor.label_paths_by_surfaces(self.roi_model)
-                except Exception as e:
-                    self._log(f"Error in labeling paths by surfaces: {str(e)}", level=1)
-                    self.roi_model.labeled_paths = None
 
-                self.roi_model.region_projections = self.processor.create_region_projections(self.roi_model)
+            if not flags['skip_smoothing']:
+                with self.logger.section("Smoothing", level=1):
+                    self.roi_model.volume = self.processor.smooth_volume(self.roi_model)
+
+            if not flags['skip_regions']:
+                with self.logger.section("Region detection", level=1):
+                    self.roi_model.region_bounds = self.processor.determine_regions_with_splines(self.roi_model)
+                    for region, (peak, sigma, bounds) in self.roi_model.region_bounds.items():
+                        self._log(f"{region}: peak={peak:.1f}, sigma={sigma:.1f}, bounds=({bounds[0]:.1f}, {bounds[1]:.1f})", level=2)
+
+            threshold_method = stack_cfg.tiling.thresh_mode or self.config.binarization_method
+            if stack_cfg.tiling.use_tiled_pipeline:
+                with self.logger.section("Tiled vessel extraction", level=1):
+                    self._run_tiled_pipeline(
+                        stack_cfg,
+                        skip_binarization=flags['skip_binarization'],
+                        skip_closing=flags['skip_closing']
+                    )
+            else:
+                with self.logger.section("Monolithic vessel extraction", level=1):
+                    self._run_monolithic_pipeline(
+                        skip_binarization=flags['skip_binarization'],
+                        skip_closing=flags['skip_closing'],
+                        threshold_method=threshold_method
+                    )
+
+            if not flags['skip_trace']:
+                with self.logger.section("Tracing", level=1):
+                    if self.roi_model.binary is None:
+                        raise ValueError("Tracing requested but binary volume is missing")
+                    self.roi_model.paths, self.roi_model.path_stats, self.roi_model.n_paths = self.tracer.trace_paths(
+                        binary_volume=self.roi_model.binary,
+                    )
+                    self._log("Smoothing traced paths...", level=2)
+                    self.roi_model.paths = self.tracer.smooth_paths(self.roi_model.paths)
+                    try:
+                        self.roi_model.labeled_paths = self.processor.label_paths_by_surfaces(self.roi_model)
+                    except Exception as exc:
+                        self._log(f"Error in labeling paths by surfaces: {exc}", level=1)
+                        self.roi_model.labeled_paths = None
+
+                    self.roi_model.region_projections = self.processor.create_region_projections(self.roi_model)
 
             self._log("Analysis complete", level=1, timing=time.time() - start_time)
             

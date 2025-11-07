@@ -63,3 +63,35 @@ scalebar:
 
 # Verbosity level (1-3)
 verbose: 2
+
+stack:
+  remove_dead_frames: True
+  dead_frame_threshold: 3.0
+  normalize: True
+  detrend: True
+  background_mode: polyfit  # Options: polyfit, rolling_ball, none
+  smoothing: gaussian       # Options: gaussian, anidiff, None
+  skip_binarization: False
+  skip_closing: False
+  skip_regions: False
+  skip_trace: False
+  seed: 12345
+  notes:
+    debug_level: 1
+
+tiling:
+  use_tiled_pipeline: True
+  tile_xy: 384
+  tile_overlap: 64
+  halo_xy: 16
+  vessel_scales: [1.0, 1.6, 2.3, 3.2, 4.5]
+  anisotropic_z: True
+  adaptive_closing: True
+  closing_rmin: 1
+  closing_rmax: 5
+  layer_aware: True
+  thresh_mode: sauvola          # triangle, otsu, sauvola, phansalkar
+  blend_mode: vesselness_max    # or_then_clean, majority
+  parallel_backend: dask        # dask, threadpool, none
+  max_workers: 0
+  cache_intermediates: False
