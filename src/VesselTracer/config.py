@@ -20,6 +20,7 @@ class VesselTracerConfig:
     micron_roi: float = 500.0
     min_x: int = 500
     min_y: int = 500
+    flip_z_axis: bool = False
     
     # Dead frames settings
     dead_frame_method: str = 'threshold'
@@ -119,6 +120,13 @@ class VesselTracerConfig:
         
         # Binarization settings
         self.binarization_method = config['binarization']['method']
+
+        # Orientation settings
+        orientation_config = config.get('orientation', {})
+        self.flip_z_axis = orientation_config.get(
+            'flip_z_axis',
+            config.get('flip_z_axis', self.flip_z_axis)
+        )
         
         # Region settings (support both legacy list and new structured format)
         regions_config = config.get('regions', DEFAULT_REGIONS)
@@ -190,6 +198,9 @@ class VesselTracerConfig:
             },
             'binarization': {
                 'method': self.binarization_method
+            },
+            'orientation': {
+                'flip_z_axis': self.flip_z_axis
             },
             'region': {
                 'peak_distance': self.region_peak_distance,
@@ -285,6 +296,7 @@ class VesselTracerConfig:
             ('ROI Size (microns)', self.micron_roi),
             ('ROI Min X', self.min_x),
             ('ROI Min Y', self.min_y),
+            ('Flip Z Axis', self.flip_z_axis),
             ('Gaussian Sigma (microns)', self.gaussian_sigma),
             ('Median Filter Size (microns)', self.median_filter_size),
             ('Close Radius (microns)', self.close_radius),
@@ -379,6 +391,8 @@ class VesselTracerConfig:
             print(f"    micron_roi     -> {self.micron_roi:8} [Size of region of interest in microns]")
             print(f"    min_x          -> {self.min_x:8} [X coordinate of ROI minimum]")
             print(f"    min_y          -> {self.min_y:8} [Y coordinate of ROI minimum]")
+        print("\nOrientation:")
+        print(f"    flip_z_axis     -> {self.flip_z_axis}")
         
         print("\nDead Frames Settings:")
         print(f"    remove_dead_frames -> {self.remove_dead_frames}")

@@ -15,6 +15,29 @@ def _extract_region_color_settings(controller) -> Tuple[Dict[str, str], str]:
     fallback_colors = {region: color for region, color in zip(DEFAULT_REGIONS, DEFAULT_REGION_COLORS)}
     return fallback_colors, DEFAULT_DIVING_COLOR
 
+
+def _should_flip_depth(controller) -> bool:
+    config = getattr(controller, 'config', None)
+    return bool(config and getattr(config, 'flip_z_axis', False))
+
+
+def _flip_depth_array(array: np.ndarray) -> np.ndarray:
+    """Flip array along depth axis (axis 0) for visualization."""
+    return np.flip(array, axis=0)
+
+
+def _flip_depth_scalar(value: float, depth: Optional[int]) -> float:
+    if depth is None:
+        return value
+    return depth - value
+
+
+def _flip_depth_bounds(bounds: Tuple[float, float], depth: Optional[int]) -> Tuple[float, float]:
+    if depth is None:
+        return bounds
+    lower, upper = bounds
+    return (depth - upper, depth - lower)
+
 def show_max_projection(vol: np.ndarray, ax: Optional[plt.Axes] = None) -> None:
     """Show maximum intensity projection of a volume.
     
@@ -47,6 +70,8 @@ def plot_projections_on_axis(ax, controller, projection: str = 'x', mode: str = 
                     represents z-position (only works with binary mode)
         show_roi_box: If True, draws a red box around the ROI coordinates (only works with source='image')
     """
+    flip_depth = _should_flip_depth(controller)
+
     # Validate mode
     valid_modes = ['volume', 'background', 'binary', 'region']
     if mode not in valid_modes:
@@ -77,6 +102,9 @@ def plot_projections_on_axis(ax, controller, projection: str = 'x', mode: str = 
         _proj = data_object.get_projection(1, operation='max', volume_type=mode, depth_coded=depth_coded)  # Y projection (xz view)
     elif projection == 'x':
         _proj = data_object.get_projection(2, operation='max', volume_type=mode, depth_coded=depth_coded)  # X projection (yz view)
+    
+    if flip_depth and projection in ('y', 'x'):
+        _proj = _flip_depth_array(_proj)
     
     # Choose colormap based on mode and depth coding
     if mode == 'region':
@@ -172,6 +200,8 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     
     # Plot mean intensity profile (bottom right)
     mean_profile = data_object.get_projection([1, 2], operation='mean', volume_type=mode)
+    if _should_flip_depth(controller):
+        mean_profile = mean_profile[::-1]
     z_positions = np.arange(len(mean_profile))
     ax_profile.plot(mean_profile, z_positions, 'b-')
     ax_profile.set_ylim(ax_profile.get_ylim()[::-1])  # Invert y-axis
@@ -220,6 +250,13 @@ def plot_paths_on_axis(ax, controller,
 
     # Get projected coordinates and colors
     x_paths, y_paths, z_paths, colors = controller.roi_model.get_path_coordinates(**get_paths_kwargs)
+
+    flip_depth = _should_flip_depth(controller)
+    depth_extent = None
+    if flip_depth and controller.roi_model is not None and controller.roi_model.volume is not None:
+        depth_extent = controller.roi_model.volume.shape[0] - 1
+    if flip_depth and depth_extent is not None:
+        z_paths = [depth_extent - z for z in z_paths]
     
     for i in range(len(x_paths)):
         if projection == 'xyz':
@@ -351,11 +388,21 @@ def plot_regions(controller, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.
     else:
         data_object = controller.image_model
     
+    flip_depth = _should_flip_depth(controller)
+    depth_extent = None
+    if flip_depth and data_object.volume is not None:
+        depth_extent = data_object.volume.shape[0] - 1
+    
     # Get mean, min, and max z-profiles using the data object's get_projection method
     mean_zprofile = data_object.get_projection([1, 2], operation='mean')
     min_zprofile = data_object.get_projection([1, 2], operation='min')
     max_zprofile = data_object.get_projection([1, 2], operation='max')
     y_proj = data_object.get_projection(1, operation='max')
+    if flip_depth:
+        mean_zprofile = mean_zprofile[::-1]
+        min_zprofile = min_zprofile[::-1]
+        max_zprofile = max_zprofile[::-1]
+        y_proj = _flip_depth_array(y_proj)
     
     # Determine regions if not already done
     if data_object.region_bounds is None:
@@ -382,13 +429,15 @@ def plot_regions(controller, figsize=(8, 4)) -> Tuple[plt.Figure, Dict[str, plt.
     # Plot regions
     for region, (peak, sigma, bounds) in data_object.region_bounds.items():
         # Add horizontal lines at peaks
-        ax0.axhline(peak, color='red', linestyle='--', alpha=0.5)
-        ax1.axhline(peak, color='red', linestyle='--', alpha=0.5)
+        display_peak = _flip_depth_scalar(peak, depth_extent) if flip_depth else peak
+        display_bounds = _flip_depth_bounds(bounds, depth_extent) if flip_depth else bounds
         span_color = region_color_map.get(region, 'gray')
+        ax0.axhline(display_peak, color='red', linestyle='--', alpha=0.5)
+        ax1.axhline(display_peak, color='red', linestyle='--', alpha=0.5)
         
         # Add spans for regions
-        ax0.axhspan(bounds[0], bounds[1], color=span_color, alpha=0.25, label=region)
-        ax1.axhspan(bounds[0], bounds[1], color=span_color, alpha=0.5, label=region)
+        ax0.axhspan(display_bounds[0], display_bounds[1], color=span_color, alpha=0.25, label=region)
+        ax1.axhspan(display_bounds[0], display_bounds[1], color=span_color, alpha=0.5, label=region)
     
     # Customize ax1 (z-profile)
     ax1.invert_yaxis()
@@ -564,6 +613,12 @@ def plot_vessel_paths_3d(controller,
         region_color_map=region_color_map,
         diving_color=diving_color
     )
+    flip_depth = _should_flip_depth(controller)
+    depth_extent = None
+    if flip_depth and model.volume is not None:
+        depth_extent = model.volume.shape[0] - 1
+    if flip_depth and depth_extent is not None:
+        z_paths = [depth_extent - z for z in z_paths]
     
     # Create 3D figure
     fig = plt.figure(figsize=figsize)
@@ -580,14 +635,17 @@ def plot_vessel_paths_3d(controller,
         x_grid, y_grid = np.meshgrid([0, x_max], [0, y_max])
         
         # Plot semi-transparent planes at region boundaries
-        for region_name, (z_min, z_max_bound, _) in model.region_bounds.items():
+        for region_name, (peak, sigma, bounds) in model.region_bounds.items():
+            lower, upper = bounds
+            if flip_depth and depth_extent is not None:
+                lower, upper = _flip_depth_bounds(bounds, depth_extent)
             # Plot lower boundary
-            z_plane_min = np.full_like(x_grid, z_min)
+            z_plane_min = np.full_like(x_grid, lower)
             ax.plot_surface(x_grid, y_grid, z_plane_min, 
                           alpha=0.1, color='gray', linewidth=0)
             
             # Plot upper boundary
-            z_plane_max = np.full_like(x_grid, z_max_bound)
+            z_plane_max = np.full_like(x_grid, upper)
             ax.plot_surface(x_grid, y_grid, z_plane_max, 
                           alpha=0.1, color='gray', linewidth=0)
     
