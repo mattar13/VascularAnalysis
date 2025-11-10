@@ -15,10 +15,19 @@ if TYPE_CHECKING:
 
 def _default_ffmpeg_locations() -> List[Path]:
     root = Path(__file__).resolve().parents[2]
-    return [
-        root / 'tools' / 'ffmpeg',
-        root / 'tools' / 'ffmpeg-7.0.2-amd64-static',
+    tools_dir = root / 'tools'
+    locations: List[Path] = [
+        tools_dir / 'ffmpeg',
+        tools_dir / 'ffmpeg-7.0.2-amd64-static',
+        tools_dir / 'ffmpeg-windows',
     ]
+
+    if tools_dir.exists():
+        exe_name = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
+        for exe in tools_dir.rglob(exe_name):
+            locations.append(exe)
+            locations.append(exe.parent)
+    return locations
 
 
 def _ensure_ffmpeg_writer() -> bool:
@@ -28,10 +37,22 @@ def _ensure_ffmpeg_writer() -> bool:
 
     exe_name = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
     for candidate in _default_ffmpeg_locations():
-        candidate_exe = candidate / exe_name
-        if candidate_exe.exists():
-            plt.rcParams['animation.ffmpeg_path'] = str(candidate_exe)
-            return animation.writers.is_available('ffmpeg')
+        candidate_path = candidate
+        try:
+            if candidate_path.is_dir():
+                candidate_path = candidate_path / exe_name
+        except OSError:
+            continue
+
+        try:
+            exists = candidate_path.exists()
+        except OSError:
+            continue
+
+        if exists:
+            plt.rcParams['animation.ffmpeg_path'] = str(candidate_path)
+            if animation.writers.is_available('ffmpeg'):
+                return True
     return False
 
 
