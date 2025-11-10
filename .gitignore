@@ -3,5 +3,6 @@ test/output_cpu/
 test/output/
 test/input/
 test/results/
+tools/
 src/DataManager/__pycache__/
 src/VesselTracer/__pycache__/
