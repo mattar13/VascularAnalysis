@@ -1,10 +1,38 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Dict, Any, Optional, Tuple, List
+import matplotlib.animation as animation
+from pathlib import Path
+from typing import Dict, Any, Optional, Tuple, List, Union, TYPE_CHECKING
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.ndimage import gaussian_filter1d
 from scipy.interpolate import splprep, splev
 from .config import DEFAULT_DIVING_COLOR, DEFAULT_REGIONS, DEFAULT_REGION_COLORS
+
+if TYPE_CHECKING:
+    from .controller import VesselAnalysisController
+
+
+def _default_ffmpeg_locations() -> List[Path]:
+    root = Path(__file__).resolve().parents[2]
+    return [
+        root / 'tools' / 'ffmpeg',
+        root / 'tools' / 'ffmpeg-7.0.2-amd64-static',
+    ]
+
+
+def _ensure_ffmpeg_writer() -> bool:
+    """Try to ensure Matplotlib can find an ffmpeg binary."""
+    if animation.writers.is_available('ffmpeg'):
+        return True
+
+    exe_name = 'ffmpeg.exe' if os.name == 'nt' else 'ffmpeg'
+    for candidate in _default_ffmpeg_locations():
+        candidate_exe = candidate / exe_name
+        if candidate_exe.exists():
+            plt.rcParams['animation.ffmpeg_path'] = str(candidate_exe)
+            return animation.writers.is_available('ffmpeg')
+    return False
 
 
 def _extract_region_color_settings(controller) -> Tuple[Dict[str, str], str]:
@@ -189,6 +217,113 @@ def plot_projections(controller, figsize=(10, 10), mode: str = 'binary', source:
     }
     
     return fig, axes
+
+
+def _get_data_object(controller: 'VesselAnalysisController', source: str):
+    if source not in ('image', 'roi'):
+        raise ValueError("source must be 'image' or 'roi'")
+    if source == 'roi':
+        if controller.roi_model is None:
+            raise ValueError("ROI model not available. Run the analysis pipeline first or set source='image'.")
+        return controller.roi_model
+    if controller.image_model is None:
+        raise ValueError("Image model is not initialized.")
+    return controller.image_model
+
+
+def _get_volume_from_object(data_object, volume_type: str) -> np.ndarray:
+    attr_map = {
+        'volume': 'volume',
+        'binary': 'binary',
+        'background': 'background',
+        'region': 'region',
+        'vesselness': 'vesselness',
+    }
+    attr_name = attr_map.get(volume_type)
+    if attr_name is None:
+        raise ValueError(f"Unsupported volume_type '{volume_type}'.")
+    volume = getattr(data_object, attr_name, None)
+    if volume is None:
+        raise ValueError(f"{volume_type} data is not available on the selected source.")
+    return np.asarray(volume)
+
+
+def save_volume_movie(
+    controller: 'VesselAnalysisController',
+    output_path: Union[str, Path],
+    *,
+    volume_type: str = 'volume',
+    source: str = 'image',
+    fps: int = 10,
+    cmap: str = 'gray',
+    dpi: int = 150,
+    figsize: Optional[Tuple[float, float]] = None,
+    normalize: bool = True,
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
+    title: Optional[str] = None,
+) -> Path:
+    """Save a controller-managed volume as a simple slice-by-slice movie."""
+    data_object = _get_data_object(controller, source)
+    volume = _get_volume_from_object(data_object, volume_type)
+    if volume.ndim != 3:
+        raise ValueError("Expected a 3D volume (z, y, x) to create a movie.")
+
+    frames = volume.astype(np.float32, copy=True)
+    if normalize:
+        finite_mask = np.isfinite(frames)
+        if finite_mask.any():
+            min_val = frames[finite_mask].min()
+            max_val = frames[finite_mask].max()
+            if max_val > min_val:
+                frames = (frames - min_val) / (max_val - min_val)
+            else:
+                frames = np.zeros_like(frames)
+        else:
+            frames = np.zeros_like(frames)
+
+    total_frames = frames.shape[0]
+    if total_frames == 0:
+        raise ValueError("Volume is empty; cannot create movie.")
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    ext = output_path.suffix.lower()
+    if ext in {'.mp4', '.mov', '.m4v'}:
+        if not _ensure_ffmpeg_writer():
+            raise RuntimeError(
+                "ffmpeg writer is not available. Install ffmpeg or save as a GIF."
+            )
+        writer = animation.FFMpegWriter(fps=fps)
+    elif ext == '.gif':
+        writer = animation.PillowWriter(fps=fps)
+    else:
+        raise ValueError("Unsupported output extension. Use .gif, .mp4, .mov, or .m4v")
+
+    plot_vmin = 0.0 if normalize and vmin is None else vmin
+    plot_vmax = 1.0 if normalize and vmax is None else vmax
+    interval = 1000 / fps if fps > 0 else 100
+
+    fig, ax = plt.subplots(figsize=figsize or (5, 5))
+    ax.set_axis_off()
+    base_title = title or "Slice sequence"
+    im = ax.imshow(frames[0], cmap=cmap, vmin=plot_vmin, vmax=plot_vmax, animated=True)
+    ax.set_title(f"{base_title} (1/{total_frames})")
+
+    def _update(idx):
+        im.set_array(frames[idx])
+        ax.set_title(f"{base_title} ({idx + 1}/{total_frames})")
+        return [im]
+
+    anim = animation.FuncAnimation(fig, _update, frames=total_frames, interval=interval, blit=True)
+    try:
+        anim.save(output_path, writer=writer, dpi=dpi)
+    finally:
+        plt.close(fig)
+
+    return output_path
+
 
 def plot_paths_on_axis(ax, controller, 
                        projection='xy', region_colorcode: bool = False, 
