@@ -18,6 +18,12 @@ from .image_processor import ImageProcessor
 from .vessel_tracer import VesselTracer
 from .controller import VesselAnalysisController
 from .plotting import show_max_projection, plot_vessel_paths_3d, smooth_path_coordinates
+from .save_skeleton import (
+    paths_to_graph,
+    export_paths_to_json,
+    paths_to_networkx,
+    export_paths_to_networkx_json
+)
 
 # Keep the old tracer.py import for backward compatibility
 # from .tracer import VesselTracer as LegacyVesselTracer
@@ -36,4 +42,8 @@ __all__ = [
     'show_max_projection',
     'plot_vessel_paths_3d',
     'smooth_path_coordinates',
+    'paths_to_graph',
+    'export_paths_to_json',
+    'paths_to_networkx',
+    'export_paths_to_networkx_json',
 ]

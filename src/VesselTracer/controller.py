@@ -11,6 +11,7 @@ from .image_processor import ImageProcessor
 from .vessel_tracer import VesselTracer
 from .config import VesselTracerConfig
 from .image_model import ImageModel, ROI
+from .save_skeleton import paths_to_graph, export_paths_to_json
 
 class VesselAnalysisController:
     """Controller class that orchestrates the complete vessel analysis pipeline.
@@ -435,6 +436,103 @@ class VesselAnalysisController:
                 analysis_dfs['paths'].to_excel(writer, sheet_name='Vessel Paths Detailed', index=False)
             if not analysis_dfs['path_summary'].empty:
                 analysis_dfs['path_summary'].to_excel(writer, sheet_name='Vessel Paths Summary', index=False)
+
+    def save_paths_to_json(self, 
+                           output_path: Union[str, Path],
+                           source: str = 'roi',
+                           use_microns: bool = True,
+                           include_radius: bool = True,
+                           indent: int = 2) -> None:
+        """Save vessel paths to a JSON file in graph format.
+        
+        The output format is:
+        {
+            "nodes": [{"id": 0, "x": 50, "y": 100, "z": 10, "path_id": 1}, ...],
+            "edges": [{"source": 0, "target": 1, "length": 5.2, "radius": 2.0, "path_id": 1}, ...]
+        }
+        
+        Args:
+            output_path: Path where to save the JSON file
+            source: Source of paths ('roi' or 'image')
+            use_microns: If True, convert coordinates to microns using pixel sizes
+            include_radius: If True, estimate radius from binary volume
+            indent: JSON indentation level (use None for compact output)
+        """
+        if source == 'roi':
+            model = self.roi_model
+        elif source == 'image':
+            model = self.image_model
+        else:
+            raise ValueError(f"Invalid source: {source}. Must be one of: roi, image")
+            
+        if model is None or model.paths is None or len(model.paths) == 0:
+            raise ValueError("No paths available to export. Run analysis first.")
+        
+        # Get pixel sizes if converting to microns
+        pixel_sizes = None
+        if use_microns:
+            pixel_sizes = (model.pixel_size_z, model.pixel_size_y, model.pixel_size_x)
+        
+        # Get binary volume for radius estimation
+        binary_volume = None
+        if include_radius and model.binary is not None:
+            binary_volume = model.binary
+        
+        export_paths_to_json(
+            paths=model.paths,
+            output_path=output_path,
+            pixel_sizes=pixel_sizes,
+            binary_volume=binary_volume,
+            coordinate_order='zyx',
+            indent=indent
+        )
+
+    def get_paths_as_graph(self, 
+                           source: str = 'roi',
+                           use_microns: bool = True,
+                           include_radius: bool = True) -> Dict[str, Any]:
+        """Get vessel paths as a graph dictionary.
+        
+        The output format is:
+        {
+            "nodes": [{"id": 0, "x": 50, "y": 100, "z": 10, "path_id": 1}, ...],
+            "edges": [{"source": 0, "target": 1, "length": 5.2, "radius": 2.0, "path_id": 1}, ...]
+        }
+        
+        Args:
+            source: Source of paths ('roi' or 'image')
+            use_microns: If True, convert coordinates to microns using pixel sizes
+            include_radius: If True, estimate radius from binary volume
+            
+        Returns:
+            Dictionary with 'nodes' and 'edges' lists
+        """
+        if source == 'roi':
+            model = self.roi_model
+        elif source == 'image':
+            model = self.image_model
+        else:
+            raise ValueError(f"Invalid source: {source}. Must be one of: roi, image")
+            
+        if model is None or model.paths is None:
+            return {"nodes": [], "edges": []}
+        
+        # Get pixel sizes if converting to microns
+        pixel_sizes = None
+        if use_microns:
+            pixel_sizes = (model.pixel_size_z, model.pixel_size_y, model.pixel_size_x)
+        
+        # Get binary volume for radius estimation
+        binary_volume = None
+        if include_radius and model.binary is not None:
+            binary_volume = model.binary
+        
+        return paths_to_graph(
+            paths=model.paths,
+            pixel_sizes=pixel_sizes,
+            binary_volume=binary_volume,
+            coordinate_order='zyx'
+        )
 
     def create_paths_dataframe(self, pixel_sizes: Optional[Dict[str, float]] = None, source: str = 'roi') -> pd.DataFrame:
         """Create a pandas DataFrame from the traced paths.
